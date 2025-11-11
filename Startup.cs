@@ -49,7 +49,10 @@ namespace esupplier
             services.AddScoped<IRepositorioRepository, RepositorioRepository>();
             services.AddScoped<IHeaderService, HeaderService>();
             services.AddControllers();
-            services.AddHostedService<ProveedorJobs>();
+            
+            // Background job moved to separate Lambda function
+            // services.AddHostedService<ProveedorJobs>(); // DISABLED for Lambda
+            
             services.AddSwaggerGen(c =>
             {
                 c.SwaggerDoc("v1", new OpenApiInfo { Title = "esupplier", Version = "v1" });
