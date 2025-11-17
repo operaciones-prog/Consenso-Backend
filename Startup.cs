@@ -79,7 +79,58 @@ namespace esupplier
             
             services.AddSwaggerGen(c =>
             {
-                c.SwaggerDoc("v1", new OpenApiInfo { Title = "esupplier", Version = "v1" });
+                // Configuración básica del documento Swagger
+                c.SwaggerDoc("v1", new OpenApiInfo 
+                { 
+                    Title = "Consenso API", 
+                    Version = "v1",
+                    Description = "API para el sistema de gestión de consenso",
+                    Contact = new OpenApiContact
+                    {
+                        Name = "Consenso Team",
+                        Email = "support@consenso.com"
+                    }
+                });
+
+                // Incluir XML comments para documentación
+                var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+                var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+                c.IncludeXmlComments(xmlPath, includeControllerXmlComments: true);
+
+                // Configurar respuestas detalladas para endpoints
+                c.EnableAnnotations();
+                
+                // Configuración de schemas personalizados
+                c.CustomSchemaIds(type => type.FullName);
+                
+                // Ignorar propiedades nulas en los schemas
+                c.UseAllOfToExtendReferenceSchemas();
+                c.SupportNonNullableReferenceTypes();
+                
+                // Configuración de seguridad para JWT (si aplica)
+                c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+                {
+                    Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+                    Name = "Authorization",
+                    In = ParameterLocation.Header,
+                    Type = SecuritySchemeType.ApiKey,
+                    Scheme = "Bearer"
+                });
+
+                c.AddSecurityRequirement(new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.SecurityScheme,
+                                Id = "Bearer"
+                            }
+                        },
+                        Array.Empty<string>()
+                    }
+                });
             });
            /* string secretKey = Configuration["Jwt:Key"];
 
