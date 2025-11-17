@@ -1,4 +1,5 @@
-﻿using esupplier.Job;
+﻿using esupplier.Config;
+using esupplier.Job;
 using esupplier.Repositorys;
 using esupplier.Repositorys.IRepositorys;
 using esupplier.Services;
@@ -48,8 +49,31 @@ namespace esupplier
             services.AddScoped<IRepositorioService, RepositorioService>();
             services.AddScoped<IRepositorioRepository, RepositorioRepository>();
             services.AddScoped<IHeaderService, HeaderService>();
+
+            // ===== CONFIGURACIÓN DE ALMACENAMIENTO (OneDrive/S3) =====
+            services.Configure<StorageSettings>(Configuration.GetSection("Storage"));
+
+            // Registrar servicios de almacenamiento
+            services.AddScoped<OneDriveStorageService>();
+            services.AddScoped<S3StorageService>();
+
+            // Registrar factory para selección dinámica
+            services.AddScoped<FileStorageFactory>();
+
+            // Registrar servicio por defecto según configuración
+            var storageProvider = Configuration.GetSection("Storage:Provider").Value?.ToUpper() ?? "ONEDRIVE";
+            if (storageProvider == "S3")
+            {
+                services.AddScoped<IFileStorageService>(provider => provider.GetRequiredService<S3StorageService>());
+            }
+            else
+            {
+                services.AddScoped<IFileStorageService>(provider => provider.GetRequiredService<OneDriveStorageService>());
+            }
+            // ===== FIN CONFIGURACIÓN DE ALMACENAMIENTO =====
+
             services.AddControllers();
-            
+
             // Background job moved to separate Lambda function
             // services.AddHostedService<ProveedorJobs>(); // DISABLED for Lambda
             
