@@ -1,3 +1,5 @@
+using Amazon.Lambda.AspNetCoreServer.Hosting;
+
 namespace esupplier
 {
     public class Program
@@ -12,6 +14,11 @@ namespace esupplier
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
                     webBuilder.UseStartup<Startup>();
+                })
+                .ConfigureServices(services =>
+                {
+                    // Add AWS Lambda hosting support
+                    services.AddAWSLambdaHosting(LambdaEventSource.HttpApi);
                 });
     }
 }

@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  esupplier:
+    build:
+      context: ../..
+      dockerfile: deployment/docker/Dockerfile
+    container_name: esupplier-api
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+    volumes:
+      # Para desarrollo local, monta appsettings
+      - ../../appsettings.Production.json:/app/appsettings.Production.json:ro
+    restart: unless-stopped
+    networks:
+      - esupplier-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  esupplier-network:
+    driver: bridge
+
