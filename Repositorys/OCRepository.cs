@@ -880,9 +880,6 @@ namespace esupplier.Repositorys
                         };
 
                         var respuestaHistorico = obtenerOCHistorico(jObjectHist);
-                        Console.WriteLine("===== respuestaHistorico =====");
-                        Console.WriteLine($"data: {respuestaHistorico.data}");
-                        Console.WriteLine($"fecha bd: {item["fecha_confirmacion"]?.ToString()}");
 
                         if (respuestaHistorico.tipo != "S" || string.IsNullOrEmpty(respuestaHistorico.data))
                             continue;
@@ -900,6 +897,13 @@ namespace esupplier.Repositorys
                         if (fechaCreacion > fechaConfirmacion)
                             item["estado_confirmacion"] = "Pendiente";
                     }
+                }
+
+                var cabeceraPendiente = cabecera.Where(x => x["estado_confirmacion"]?.ToString() == "Pendiente" && x["reg_id"]?.ToString() == "0").ToList();
+                JArray jArrayOC = JArray.FromObject(cabeceraPendiente);
+                if (jArrayOC.Count() > 0)
+                {
+                    registrarOCCabecera(jArrayOC);
                 }
 
                 return new Mensaje
@@ -1262,6 +1266,26 @@ namespace esupplier.Repositorys
             }
 
             return mensaje;
+        }
+
+        public void registrarOCCabecera(JArray jArrayOC)
+        {
+            try
+            {
+                using (SqlConnection bdSql = new SqlConnection(_configuration.GetConnectionString("esupplier")))
+                {
+                    bdSql.Open();
+                    SqlCommand bdComando = new SqlCommand("sp_mantenerOC_cabecera", bdSql);
+                    bdComando.CommandType = CommandType.StoredProcedure;
+                    bdComando.Parameters.Add(new SqlParameter("@p_json", jArrayOC.ToString()));
+                    bdComando.ExecuteNonQuery();
+                    bdSql.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                ex.Message.ToString();
+            }
         }
 
     }
