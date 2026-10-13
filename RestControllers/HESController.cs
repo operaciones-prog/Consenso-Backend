@@ -1,7 +1,8 @@
-﻿using System.Text;
 using esupplier.Models.Response;
 using esupplier.Services.IServices;
+using esupplier.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace esupplier.RestControllers
@@ -10,42 +11,37 @@ namespace esupplier.RestControllers
     [ApiController]
     public class HESController : ControllerBase
     {
-        private IHESService _HESService;
+        private readonly IHESService _HESService;
+        private readonly ILogger<HESController> _logger;
 
-        public HESController(IHESService hesService)
+        public HESController(IHESService hesService, ILogger<HESController> logger)
         {
             _HESService = hesService;
+            _logger = logger;
         }
 
         [HttpPost("buscarHES")]
-        public ActionResult buscarHES()
+        public async Task<ActionResult> buscarHES()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _HESService.buscarHES(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\",\"data\":{" + msj.data + "}}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                Mensaje msj = await _HESService.buscarHES(jObject);
+                return Ok(ApiRespuesta.DesdeMensajeConObjeto(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en buscarHES");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "HES.buscarHES"));
             }
-
-            return Ok(rpta);
         }
     }
 }

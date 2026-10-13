@@ -27,7 +27,7 @@ namespace esupplier.Services
 
         public IFileStorageService GetStorageService(string provider)
         {
-            return provider.ToUpper() switch
+            return (provider ?? "").ToUpperInvariant() switch
             {
                 "S3" => _serviceProvider.GetRequiredService<S3StorageService>(),
                 "ONEDRIVE" => _serviceProvider.GetRequiredService<OneDriveStorageService>(),

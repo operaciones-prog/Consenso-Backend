@@ -14,5 +14,6 @@
         public static string HISTORY = "HISTORY";
         public static string ACTION_REFUSED = "REFUSED";
         public static string INDICADOR_DETALLE = "1";
+        public const string HTTP_CLIENT_SAP = "SAP";
     }
 }

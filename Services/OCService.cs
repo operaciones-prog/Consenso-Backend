@@ -1,4 +1,4 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models.Response;
 using esupplier.Repositorys.IRepositorys;
 using esupplier.Services.IServices;
 using Newtonsoft.Json.Linq;
@@ -51,7 +51,7 @@ namespace esupplier.Services
 
         public Mensaje listarArchivoOc(string oc, string sociedad, bool ruta)
         {
-            return _ocRepository.listarArchivoOc(oc, sociedad,ruta);
+            return _ocRepository.listarArchivoOc(oc, sociedad, ruta);
         }
 
         public Mensaje eliminarArchivoOc(int id, string usuario)
@@ -64,12 +64,12 @@ namespace esupplier.Services
             return _ocRepository.notificarOCPendiente();
         }
 
-        public Mensaje obtenerOC(JObject jObject)
+        public Task<Mensaje> obtenerOC(JObject jObject)
         {
             return _ocRepository.obtenerOC(jObject);
         }
 
-        public Mensaje obtenerOCHistorico(JObject jObject)
+        public Task<Mensaje> obtenerOCHistorico(JObject jObject)
         {
             return _ocRepository.obtenerOCHistorico(jObject);
         }

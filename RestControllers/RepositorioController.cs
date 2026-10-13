@@ -1,271 +1,251 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models;
+using esupplier.Models.Response;
+using esupplier.Services;
 using esupplier.Services.IServices;
 using esupplier.Utils;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Graph.Auth;
 using Microsoft.Graph;
-using Microsoft.Identity.Client;
-using Newtonsoft.Json.Linq;
-using esupplier.Models;
-using esupplier.Services;
 using Newtonsoft.Json;
-using System.Text;
+using Newtonsoft.Json.Linq;
 
 namespace esupplier.RestControllers
 {
-
     [Route("api/[controller]")]
     [ApiController]
     public class RepositorioController : ControllerBase
     {
-        private IConfiguracionService _ConfiguracionService;
-        private readonly IConfidentialClientApplication _confidentialClientApplication;
-        private readonly ClientCredentialProvider _authProvider;
-        private readonly GraphServiceClient _graphClient;
+        private readonly IGraphClientProvider _graphProvider;
         private readonly IRepositorioService _repositorioService;
-
         private readonly IHeaderService _headerService;
+        private readonly ILogger<RepositorioController> _logger;
 
-        public RepositorioController( IConfiguracionService configuracionService, IRepositorioService repositorioService, IHeaderService headerService)
+        public RepositorioController(
+            IGraphClientProvider graphProvider,
+            IRepositorioService repositorioService,
+            IHeaderService headerService,
+            ILogger<RepositorioController> logger)
         {
-            _ConfiguracionService = configuracionService;
+            _graphProvider = graphProvider;
             _repositorioService = repositorioService;
             _headerService = headerService;
-            JObject jObject = new JObject();
-            jObject["adm_cliente_id"] = Constantes.ADM_CLIENTE;
-            jObject["tipo_constante"] = "ONEDRIVE";
-            jObject["codigo_constante"] = "";
-
-            Mensaje msj = _ConfiguracionService.listarConstantes(jObject);
-
-            JObject jObjectList = JObject.Parse("{" + msj.data + "}");
-            JArray jsonArray = (JArray)jObjectList["constantes"];
-
-            string clientId = "";
-            string clientSecret = "";
-            string tenantId = "";
-
-            foreach (JObject item in jsonArray)
-            {
-                string codigo_constante = (string)item["codigo_constante"];
-                if ("CLIENT_ID" == codigo_constante)
-                {
-                    clientId = (string)item["valor_constante"];
-                }
-                else if ("SECRECT" == codigo_constante)
-                {
-                    clientSecret = (string)item["valor_constante"];
-                }
-                else if ("TENANT_ID" == codigo_constante)
-                {
-                    tenantId = (string)item["valor_constante"];
-                }
-            }
-
-            _confidentialClientApplication = ConfidentialClientApplicationBuilder
-                .Create(clientId)
-                .WithClientSecret(clientSecret)
-                .WithTenantId(tenantId)
-                .Build();
-
-            _authProvider = new ClientCredentialProvider(_confidentialClientApplication);
-            _graphClient = new GraphServiceClient(_authProvider);
+            _logger = logger;
         }
 
+        /// <summary>Configuración de OneDrive del usuario devuelta por sp_obtenerRutaRepositorio.</summary>
+        private sealed class RutaRepositorio
+        {
+            public int Admin { get; set; }
+            public string Carga { get; set; } = "";
+            public string Ruta { get; set; } = "";
+            public string Correo { get; set; } = "";
+        }
+
+        /// <summary>Obtiene la ruta del repositorio del usuario. Devuelve null y un mensaje si no existe o hubo error.</summary>
+        private RutaRepositorio ObtenerRuta(string usuario, out string error)
+        {
+            error = null;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                error = "Falta el campo obligatorio 'usuario'.";
+                return null;
+            }
+
+            Mensaje msj = _repositorioService.obtenerRutaRepositorio(usuario.Trim());
+            if (msj == null || msj.tipo != "S" || string.IsNullOrWhiteSpace(msj.data))
+            {
+                error = msj?.mensaje ?? ApiRespuesta.MensajeErrorGenerico;
+                return null;
+            }
+
+            JArray filas = JArray.Parse(msj.data);
+            if (filas.Count == 0)
+            {
+                error = "No se encontró la configuración del repositorio para el usuario.";
+                return null;
+            }
+
+            // Se mantiene el criterio original: la última fila devuelta por el SP.
+            JToken item = filas[filas.Count - 1];
+            return new RutaRepositorio
+            {
+                Admin = LeerAdmin(item["admin"]),
+                Carga = ((string)item["carga"] ?? "").TrimEnd('/'),
+                Ruta = ((string)item["ruta"] ?? "").TrimEnd('/'),
+                Correo = (string)item["correo"] ?? ""
+            };
+        }
+
+        private static int LeerAdmin(JToken valor)
+        {
+            if (valor == null || valor.Type == JTokenType.Null) return 0;
+            if (valor.Type == JTokenType.Integer || valor.Type == JTokenType.Boolean || valor.Type == JTokenType.Float)
+            {
+                return Convert.ToInt32(((JValue)valor).Value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            return int.TryParse((string)valor, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int a) ? a : 0;
+        }
 
         [HttpGet("listarArchivos")]
         public async Task<ActionResult> listarArchivos([FromQuery] string usuario)
         {
-            List<OneDriveItem> lista= new List<OneDriveItem>();
-
-            string rpta = "";
-            Mensaje msj = _repositorioService.obtenerRutaRepositorio(usuario);
-            JArray jsonArray = JArray.Parse(msj.data);
-
-            int admin = 0;
-            string carga = "";
-            string ruta = "";
-            string correo = "";
-
-            foreach (JObject item in jsonArray)
+            try
             {
-                admin = (int)item["admin"];
-                carga = (string)item["carga"];
-                if (carga.EndsWith(@"/"))
+                RutaRepositorio ruta = ObtenerRuta(usuario, out string error);
+                if (ruta == null)
                 {
-                    carga = carga.TrimEnd('/');
-                }
-                ruta = (string)item["ruta"];
-                if (ruta.EndsWith(@"/"))
-                {
-                    ruta = ruta.TrimEnd('/');
-                }
-                correo = (string)item["correo"];
-            }
-           
-                try
-            {
-                if(admin==0)
-                {
-                    var portal = await listarArchivosDrive(ruta, correo, admin);
-                    lista.AddRange(portal);
+                    return Ok(ApiRespuesta.Error(error));
                 }
 
+                List<OneDriveItem> lista = new List<OneDriveItem>();
+                if (ruta.Admin == 0)
+                {
+                    lista.AddRange(await listarArchivosDrive(ruta.Ruta, ruta.Correo, ruta.Admin));
+                }
+                lista.AddRange(await listarArchivosDrive(ruta.Carga, ruta.Correo, ruta.Admin));
 
-                var sublist = await listarArchivosDrive(carga, correo, admin);
-                lista.AddRange(sublist);
-                var json = JsonConvert.SerializeObject(lista, Formatting.Indented);
-
-                rpta = "{\"type\":\"S\",\"data\":" + json + "}";
+                return Ok(ApiRespuesta.ExitoSoloData(JsonConvert.SerializeObject(lista)));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Repositorio.listarArchivos"));
             }
-            
-            return Ok(rpta);
         }
 
-        private async Task<List<OneDriveItem>> listarArchivosDrive( string ruta, string correo,int admin)
+        private async Task<List<OneDriveItem>> listarArchivosDrive(string ruta, string correo, int admin)
         {
-
             List<OneDriveItem> lista = new List<OneDriveItem>();
 
             try
             {
-                var driveItems = await _graphClient.Users[correo].Drive.Root
+                var driveItems = await _graphProvider.Cliente.Users[correo].Drive.Root
                     .ItemWithPath(ruta)
                     .Children
                     .Request()
                     .GetAsync();
 
-
-
                 foreach (var item in driveItems)
                 {
                     if (item.File != null) // Filtrar solo archivos
                     {
-                        var driveItem = new OneDriveItem();
-                        driveItem.id = item.Id;
-                        driveItem.nombre = item.Name;
-                        driveItem.carpeta = item.ParentReference.Name;
-                        driveItem.fec = String.Format("{0:yyyy/MM/dd}", item.CreatedDateTime);  
-                        driveItem.ext = ConsultaUtil.GetFileExtension(item.Name);
-                        lista.Add(driveItem);
-
+                        lista.Add(new OneDriveItem
+                        {
+                            id = item.Id,
+                            nombre = item.Name,
+                            carpeta = item.ParentReference?.Name,
+                            fec = string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:yyyy/MM/dd}", item.CreatedDateTime),
+                            ext = ConsultaUtil.GetFileExtension(item.Name)
+                        });
                     }
-                    else if(admin==1)
+                    else if (admin == 1)
                     {
-                        var sublist= await listarArchivosDrive( ruta+'/'+item.Name,  correo,  admin);
-                        lista.AddRange(sublist);
-
+                        lista.AddRange(await listarArchivosDrive(ruta + '/' + item.Name, correo, admin));
                     }
                 }
             }
-            catch (Exception e)
+            catch (ServiceException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
+                // Carpeta inexistente: se considera vacía (comportamiento histórico).
+                _logger.LogWarning("Carpeta de OneDrive no encontrada: {Ruta}", ruta);
+            }
+            catch (Exception ex)
+            {
+                // Se mantiene el comportamiento histórico (se omite la carpeta) pero se registra el error.
+                _logger.LogError(ex, "Error al listar la carpeta de OneDrive {Ruta}", ruta);
             }
 
             return lista;
         }
 
+        /// <summary>Normaliza una ruta de OneDrive para comparar (sin "/drive/root:", sin barras extremas, decodificada).</summary>
+        private static string NormalizarRuta(string ruta)
+        {
+            if (string.IsNullOrEmpty(ruta)) return "";
+            string r = Uri.UnescapeDataString(ruta);
+            int idx = r.IndexOf("root:", StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0) r = r.Substring(idx + "root:".Length);
+            return r.Trim('/');
+        }
+
+        private static bool EstaDentroDe(string carpeta, string raiz)
+        {
+            string c = NormalizarRuta(carpeta);
+            string r = NormalizarRuta(raiz);
+            if (r.Length == 0) return false;
+            return c.Equals(r, StringComparison.OrdinalIgnoreCase)
+                || c.StartsWith(r + "/", StringComparison.OrdinalIgnoreCase);
+        }
 
         [HttpGet("descargarArchivo/{usuario}/{id}")]
         public async Task<IActionResult> DescargarArchivo([FromRoute] string usuario, [FromRoute] string id)
         {
-            Mensaje msj = _repositorioService.obtenerRutaRepositorio(usuario);
-            JArray jsonArray = JArray.Parse(msj.data);
-
-            string correo = "";
-
-            foreach (JObject item in jsonArray)
+            try
             {
+                if (string.IsNullOrWhiteSpace(id) || id.Contains('/') || id.Contains('\\') || id.Contains(".."))
+                {
+                    return NotFound();
+                }
 
-                correo = (string)item["correo"];
+                RutaRepositorio ruta = ObtenerRuta(usuario, out string error);
+                if (ruta == null || string.IsNullOrEmpty(ruta.Correo))
+                {
+                    _logger.LogWarning("Descarga rechazada: sin repositorio para el usuario {Usuario}. {Error}", usuario, error);
+                    return NotFound();
+                }
+
+                var cliente = _graphProvider.Cliente;
+                var file = await cliente.Users[ruta.Correo].Drive.Items[id].Request().GetAsync();
+
+                // El archivo debe estar dentro de las carpetas que el usuario puede listar.
+                string carpeta = file.ParentReference?.Path;
+                bool permitido = EstaDentroDe(carpeta, ruta.Carga) || (ruta.Admin == 0 && EstaDentroDe(carpeta, ruta.Ruta));
+                if (!permitido)
+                {
+                    _logger.LogWarning("Descarga rechazada: el archivo {Id} ({Carpeta}) no pertenece al repositorio del usuario {Usuario}", id, carpeta, usuario);
+                    return NotFound();
+                }
+
+                var stream = await cliente.Users[ruta.Correo].Drive.Items[id].Content.Request().GetAsync();
+                return File(stream, "application/octet-stream", file.Name);
             }
-            if (correo != null && correo != "")
+            catch (ServiceException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                try
-                {
-
-                    var file = await _graphClient.Users[correo].Drive.Items[id].Request().GetAsync();
-                    var fileName = file.Name;
-
-                    var stream = await _graphClient.Users[correo].Drive.Items[id].Content.Request().GetAsync();
-                    return File(stream, "application/octet-stream", fileName);
-             
-                
-                }
-                catch (Microsoft.Graph.ServiceException ex)
-                {
-                    if (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
-                    {
-                       
-                        // Manejar el caso de que el archivo no se encuentre
-                        Console.WriteLine("El archivo no se encontró en OneDrive.");
-                    }
-                    else
-                    {
-                        // Manejar otros errores de Graph API
-                        Console.WriteLine($"Error al obtener el archivo: {ex.Message}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Manejar otros tipos de excepciones
-                    Console.WriteLine($"Error general: {ex.Message}");
-                }
+                _logger.LogWarning("Archivo {Id} no encontrado en OneDrive", id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al descargar el archivo {Id} de OneDrive", id);
             }
 
             // Si no se puede descargar el archivo, devolver un error
             return NotFound();
         }
 
-
         [HttpPost("subirOneDrive")]
         public async Task<ActionResult> SubirOneDrive()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
 
-                JObject file = (JObject)jObject["file"];
-
-
-                string fileContent = (string)file["fileContent"];
-                string[] fileContentSplit = fileContent.Split(',');
-
-                string fileName = (string)file["fileName"];
-
-                string usuario = ((string)jObject["usuario"]).Trim();
-
-                Mensaje msj = _repositorioService.obtenerRutaRepositorio(usuario);
-                JArray jsonArray = JArray.Parse(msj.data);
-
-               
-                string carga = "";
-                string correo = "";
-
-                foreach (JObject item in jsonArray)
+                if (!(jObject["file"] is JObject file))
                 {
-                    carga = (string)item["carga"];
-                    correo = (string)item["correo"];
+                    throw new CampoRequeridoException("file");
                 }
 
+                string fileName = ArchivoUtil.NombreSeguro(JsonUtil.Requerido(file, "fileName"));
+                byte[] byteArray = ArchivoUtil.DecodificarBase64(JsonUtil.Requerido(file, "fileContent"));
+                string usuario = JsonUtil.Requerido(jObject, "usuario").Trim();
 
+                RutaRepositorio ruta = ObtenerRuta(usuario, out string error);
+                if (ruta == null)
+                {
+                    return Ok(ApiRespuesta.Error(error));
+                }
 
+                using MemoryStream stream = new MemoryStream(byteArray);
 
-                byte[] byteArray = Convert.FromBase64String(fileContentSplit[1]);
-
-
-
-                MemoryStream stream = new MemoryStream(byteArray);
-
-                var uploadSession = await _graphClient.Users[correo].Drive.Root
-                    .ItemWithPath(carga + fileName)
+                var uploadSession = await _graphProvider.Cliente.Users[ruta.Correo].Drive.Root
+                    .ItemWithPath(ruta.Carga + "/" + fileName)
                     .CreateUploadSession()
                     .Request()
                     .PostAsync();
@@ -274,33 +254,32 @@ namespace esupplier.RestControllers
                 var fileUploadTask = new LargeFileUploadTask<DriveItem>(uploadSession, stream, maxChunkSize);
                 var uploadResult = await fileUploadTask.UploadAsync();
 
-                string idioma = _headerService.obtenerIdioma();
-   
+                bool espanol = _headerService.obtenerIdioma() == "ES";
                 if (uploadResult.UploadSucceeded)
                 {
-                    if (idioma == "ES")
-                        rpta = "{\"message\":\"Se subio el archivo correctamente\",\"type\":\"S\"}";
-                    else
-                        rpta = "{\"message\":\"The file was uploaded successfully\",\"type\":\"S\"}";
-                }
-                else
-                {
-                    if (idioma == "ES")
-                        rpta = "{\"message\":\"error al subir el archivo\",\"type\":\"E\"}";
-                    else
-                        rpta = "{\"message\":\"error uploading file\",\"type\":\"E\"}";
-
+                    return Ok(ApiRespuesta.Exito(espanol ? "Se subio el archivo correctamente" : "The file was uploaded successfully"));
                 }
 
+                _logger.LogWarning("La subida de {Archivo} a OneDrive no se completó", fileName);
+                return Ok(ApiRespuesta.Error(espanol ? "error al subir el archivo" : "error uploading file"));
             }
-            catch (Exception ex)
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
             {
-
-                rpta = "{\"message\":\"" + ex.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.Error(e.Message));
             }
-
-            return Ok(rpta);
+            catch (FormatException)
+            {
+                return Ok(ApiRespuesta.Error("El contenido del archivo no es un base64 válido."));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en subirOneDrive");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
+            }
+            catch (Exception e)
+            {
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Repositorio.subirOneDrive"));
+            }
         }
-
     }
 }

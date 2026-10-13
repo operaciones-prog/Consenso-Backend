@@ -1,7 +1,7 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models.Response;
 using esupplier.Repositorys.IRepositorys;
+using esupplier.Utils;
 using Microsoft.Data.SqlClient;
-using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
 using System.Data;
 
@@ -9,17 +9,18 @@ namespace esupplier.Repositorys
 {
     public class RepositorioRepository : IRepositorioRepository
     {
-        private IConfiguration _configuration;
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<RepositorioRepository> _logger;
 
-        public RepositorioRepository(IConfiguration configuration)
+        public RepositorioRepository(IConfiguration configuration, ILogger<RepositorioRepository> logger)
         {
             _configuration = configuration;
+            _logger = logger;
         }
 
-        public Mensaje obtenerRutaRepositorio(string  usuario)
+        public Mensaje obtenerRutaRepositorio(string usuario)
         {
             Mensaje mensaje = new Mensaje();
-
             DataTable dt = new DataTable();
 
             try
@@ -27,25 +28,23 @@ namespace esupplier.Repositorys
                 using (SqlConnection bdSql = new SqlConnection(_configuration.GetConnectionString("esupplier")))
                 {
                     bdSql.Open();
-                    SqlCommand bdComando = new SqlCommand("sp_obtenerRutaRepositorio", bdSql);
+                    using SqlCommand bdComando = new SqlCommand("sp_obtenerRutaRepositorio", bdSql);
                     bdComando.CommandType = CommandType.StoredProcedure;
-                    bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
-                    using (SqlDataAdapter adapter = new SqlDataAdapter((SqlCommand)bdComando))
+                    bdComando.Parameters.Add(new SqlParameter("@usuario", (object)usuario ?? DBNull.Value));
+                    using (SqlDataAdapter adapter = new SqlDataAdapter(bdComando))
                     {
                         adapter.Fill(dt);
 
                         mensaje.tipo = "S";
                         mensaje.mensaje = "";
-                        mensaje.data =  JsonConvert.SerializeObject(dt, Formatting.Indented);
+                        mensaje.data = JsonConvert.SerializeObject(dt, Formatting.Indented);
                     }
-                    bdSql.Close();
                 }
             }
             catch (Exception ex)
             {
-                mensaje.tipo = "E";
-                mensaje.mensaje = "No se encontraron constantes";
-                mensaje.data = "";
+                _logger.LogError(ex, "Error en sp_obtenerRutaRepositorio (usuario {Usuario})", usuario);
+                return new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
             }
 
             return mensaje;

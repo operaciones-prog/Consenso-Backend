@@ -4,6 +4,12 @@ using esupplier.Repositorys;
 using esupplier.Repositorys.IRepositorys;
 using esupplier.Services;
 using esupplier.Services.IServices;
+using System.Text;
+using esupplier.Middleware;
+using esupplier.Utils;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
 namespace esupplier
@@ -13,6 +19,8 @@ namespace esupplier
         readonly string MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
         public Startup(IConfiguration configuration)
         {
+            // Necesario para que ExcelDataReader lea archivos .xls en .NET 8
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             Configuration = configuration;
         }
 
@@ -21,14 +29,24 @@ namespace esupplier
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            services.AddCors(options =>
+            // Orígenes permitidos por entorno (Cors:Origins). Si no se configuran, se usan los históricos.
+            string[] origenes = Configuration.GetSection("Cors:Origins").Get<string[]>();
+            if (origenes == null || origenes.Length == 0)
             {
-                options.AddPolicy(name: MyAllowSpecificOrigins,
-                    builder => builder.WithOrigins("http://localhost:4200",
+                origenes = new[]
+                {
+                    "http://localhost:4200",
                     "https://consenso-ec-qas.netlify.app",
                     "https://concenso-ec-dev.netlify.app",
                     "https://consenso-web.vercel.app",
-                    "https://consenso.esupplier.biz")
+                    "https://consenso.esupplier.biz",
+                    "https://consenso.esupplier.net"
+                };
+            }
+            services.AddCors(options =>
+            {
+                options.AddPolicy(name: MyAllowSpecificOrigins,
+                    builder => builder.WithOrigins(origenes)
                 .AllowAnyHeader()
                 .AllowAnyMethod());
             });
@@ -49,6 +67,21 @@ namespace esupplier
             services.AddScoped<IRepositorioService, RepositorioService>();
             services.AddScoped<IRepositorioRepository, RepositorioRepository>();
             services.AddScoped<IHeaderService, HeaderService>();
+
+            // Cliente de Microsoft Graph compartido (credenciales y token cacheados)
+            services.AddSingleton<IGraphClientProvider, GraphClientProvider>();
+
+            // Cliente HTTP para SAP CPI con timeout menor al de API Gateway (30 s)
+            services.AddHttpClient(Constantes.HTTP_CLIENT_SAP, client =>
+            {
+                int timeout = Configuration.GetValue<int?>("Http:TimeoutSeconds") ?? 25;
+                client.Timeout = TimeSpan.FromSeconds(timeout);
+                string autorizacion = Configuration["Http:Autorizacion"];
+                if (!string.IsNullOrWhiteSpace(autorizacion))
+                {
+                    client.DefaultRequestHeaders.TryAddWithoutValidation("Authorization", autorizacion);
+                }
+            });
 
             // ===== CONFIGURACIÓN DE ALMACENAMIENTO (OneDrive/S3) =====
             services.Configure<StorageSettings>(Configuration.GetSection("Storage"));
@@ -74,8 +107,6 @@ namespace esupplier
 
             services.AddControllers();
 
-            // Background job moved to separate Lambda function
-            // services.AddHostedService<ProveedorJobs>(); // DISABLED for Lambda
             
             services.AddSwaggerGen(c =>
             {
@@ -132,34 +163,50 @@ namespace esupplier
                     }
                 });
             });
-           /* string secretKey = Configuration["Jwt:Key"];
-
-            var tokenValidationParameters = new TokenValidationParameters
+            // ===== AUTENTICACIÓN JWT =====
+            // Auth:Enabled=false (por defecto) mantiene la API abierta mientras el frontend se adapta.
+            // Con Auth:Enabled=true todos los endpoints exigen token, salvo los marcados [AllowAnonymous].
+            bool authHabilitada = Configuration.GetValue<bool>("Auth:Enabled");
+            string jwtKey = Configuration["Jwt:Key"];
+            if (authHabilitada && (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32))
             {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateIssuerSigningKey = true,
-                ValidIssuer = Configuration["Jwt:Issuer"],
-                ValidAudience = Configuration["Jwt:Issuer"],
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey))
-            };
+                throw new InvalidOperationException("Auth:Enabled=true requiere Jwt:Key con al menos 32 caracteres.");
+            }
+            byte[] claveFirma = string.IsNullOrWhiteSpace(jwtKey)
+                ? System.Security.Cryptography.RandomNumberGenerator.GetBytes(64) // sin clave configurada: ningún token externo es válido
+                : Encoding.UTF8.GetBytes(jwtKey);
 
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
                 {
-                    options.TokenValidationParameters = tokenValidationParameters;
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateIssuer = true,
+                        ValidateAudience = true,
+                        ValidateLifetime = true,
+                        ValidateIssuerSigningKey = true,
+                        ValidIssuer = Configuration["Jwt:Issuer"] ?? "consenso-api",
+                        ValidAudience = Configuration["Jwt:Audience"] ?? "consenso-web",
+                        IssuerSigningKey = new SymmetricSecurityKey(claveFirma),
+                        ClockSkew = TimeSpan.FromMinutes(1)
+                    };
                 });
 
-            services.AddAuthorization();*/
+            services.AddAuthorization(options =>
+            {
+                if (authHabilitada)
+                {
+                    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                        .RequireAuthenticatedUser()
+                        .Build();
+                }
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            if (env.IsDevelopment())
-            {
-                app.UseDeveloperExceptionPage();
-            }
+            app.UseMiddleware<ExcepcionGlobalMiddleware>();
 
             app.UseHttpsRedirection();
 
@@ -167,16 +214,20 @@ namespace esupplier
 
             app.UseRouting();
 
-            //app.UseAuthentication();
+            app.UseAuthentication();
 
             app.UseAuthorization();
 
-            app.UseSwagger();
-
-            app.UseSwaggerUI(c =>
+            // Swagger solo en Development o si se habilita explícitamente (Swagger:Enabled=true)
+            if (env.IsDevelopment() || Configuration.GetValue<bool>("Swagger:Enabled"))
             {
-                c.SwaggerEndpoint("/swagger/v1/swagger.json", "esupplier v1");
-            });
+                app.UseSwagger();
+
+                app.UseSwaggerUI(c =>
+                {
+                    c.SwaggerEndpoint("/swagger/v1/swagger.json", "esupplier v1");
+                });
+            }
 
             app.UseEndpoints(endpoints =>
             {

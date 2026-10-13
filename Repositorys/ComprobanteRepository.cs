@@ -1,88 +1,58 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models.Response;
 using esupplier.Repositorys.IRepositorys;
+using esupplier.Utils;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Net;
 
 namespace esupplier.Repositorys
 {
     public class ComprobanteRepository : IComprobanteRepository
     {
-        private IConfiguration _configuration;
+        private readonly IConfiguration _configuration;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<ComprobanteRepository> _logger;
 
-        public ComprobanteRepository(IConfiguration configuration)
+        public ComprobanteRepository(IConfiguration configuration, IHttpClientFactory httpClientFactory, ILogger<ComprobanteRepository> logger)
         {
             _configuration = configuration;
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
         }
 
-        public Mensaje buscarComprobantes(JObject jObject)
+        public async Task<Mensaje> buscarComprobantes(JObject jObject)
         {
-            Mensaje mensaje = new Mensaje();
-
-            var url = _configuration["Http:Consultarcomprobantes"];
-            var request = (HttpWebRequest)WebRequest.Create(url);
-            string json = jObject.ToString();
-            request.Method = "POST";
-            request.ContentType = "application/json";
-            request.Accept = "application/json";
-            request.Headers.Add("Authorization", _configuration["Http:Autorizacion"]);
-
-            using (var streamWriter = new StreamWriter(request.GetRequestStream()))
+            string responseBody;
+            try
             {
-                streamWriter.Write(json);
-                streamWriter.Flush();
-                streamWriter.Close();
+                HttpClient cliente = _httpClientFactory.CreateClient(Constantes.HTTP_CLIENT_SAP);
+                responseBody = await ConsultaUtil.PostSapAsync(cliente, _configuration["Http:Consultarcomprobantes"], jObject.ToString());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al consultar comprobantes en SAP");
+                return new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
+            }
+
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return new Mensaje("E", "Sin respuesta - null", "");
             }
 
             try
             {
-                using (WebResponse response = request.GetResponse())
+                JObject objJsonAux = JObject.Parse(responseBody);
+                if (!(objJsonAux["ET_DOCPAGO"]?["item"] is JArray arrayDOCPAGO))
                 {
-                    using (Stream strReader = response.GetResponseStream())
-                    {
-                        if (strReader != null)
-                        {
-                            using (StreamReader objReader = new StreamReader(strReader))
-                            {
-                                string responseBody = objReader.ReadToEnd();
-                                JObject objJsonAux = JObject.Parse(responseBody);
-
-                                mensaje.tipo = "S";
-                                mensaje.mensaje = "";
-
-                                try
-                                {
-                                    JArray arrayDOCPAGO = new JArray();
-                                    arrayDOCPAGO = (JArray)objJsonAux["ET_DOCPAGO"]["item"];
-
-                                    mensaje.data = "\"ET_DOCPAGO\":" + arrayDOCPAGO.ToString();
-
-                                }
-                                catch (Exception ex)
-                                {
-                                    mensaje.tipo = "E";
-                                    mensaje.mensaje = "No se encontraron registros";
-                                    mensaje.data = "";
-                                }
-
-                            }
-                        }
-                        else
-                        {
-                            mensaje.tipo = "E";
-                            mensaje.mensaje = "Sin respuesta - null";
-                            mensaje.data = "";
-                        }
-                    }
+                    return new Mensaje("E", "No se encontraron registros", "");
                 }
-            }
-            catch (Exception ex)
-            {
-                mensaje.tipo = "E";
-                mensaje.mensaje = "No se encuntraron comprobantes";
-                mensaje.data = "";
-            }
 
-            return mensaje;
+                return new Mensaje("S", "", "\"ET_DOCPAGO\":" + arrayDOCPAGO.ToString());
+            }
+            catch (JsonReaderException ex)
+            {
+                _logger.LogError(ex, "Respuesta de SAP (comprobantes) no es un JSON válido");
+                return new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
+            }
         }
     }
 }

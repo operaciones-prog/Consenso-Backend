@@ -13,13 +13,16 @@ namespace esupplier.Services
 
         public string obtenerCabecera(string key)
         {
-            return _httpContextAccessor.HttpContext.Request.Headers[key].ToString();
+            // Fuera de un request (p. ej. el job de Lambda) no hay HttpContext.
+            return _httpContextAccessor.HttpContext?.Request.Headers[key].ToString() ?? "";
         }
 
         public IDictionary<string, string> obtenerCabeceras()
         {
             var headers = new Dictionary<string, string>();
-            foreach (var header in _httpContextAccessor.HttpContext.Request.Headers)
+            var contexto = _httpContextAccessor.HttpContext;
+            if (contexto == null) return headers;
+            foreach (var header in contexto.Request.Headers)
             {
                 headers[header.Key] = header.Value.ToString();
             }
@@ -29,12 +32,11 @@ namespace esupplier.Services
 
         public string obtenerIdioma()
         {
-            // Obtiene el valor del header "Idioma"
-            if (_httpContextAccessor.HttpContext != null &&
-             _httpContextAccessor.HttpContext.Request.Headers.ContainsKey("Idioma"))
+            // Valor del header "Idioma" (por defecto "ES")
+            var contexto = _httpContextAccessor.HttpContext;
+            if (contexto != null && contexto.Request.Headers.TryGetValue("Idioma", out var idioma) && !string.IsNullOrWhiteSpace(idioma))
             {
-                // Retorna el valor del header "Idioma"
-                return _httpContextAccessor.HttpContext.Request.Headers["Idioma"].ToString().ToUpper();
+                return idioma.ToString().Trim().ToUpperInvariant();
             }
 
             return "ES";

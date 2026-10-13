@@ -1,109 +1,100 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models.Response;
 using esupplier.Repositorys.IRepositorys;
 using esupplier.Services.IServices;
+using esupplier.Utils;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Net;
 
 namespace esupplier.Repositorys
 {
     public class HESRepository : IHESRepository
     {
-        private IConfiguration _configuration;
-        private readonly IHeaderService _headerService;
+        // Traducción de TIPO_SERVICIO cuando el idioma no es español.
+        private static readonly Dictionary<string, string> TipoServicioEN = new()
+        {
+            ["Mercaderia"] = "Merchandise",
+            ["Servicio"] = "Service"
+        };
 
-        public HESRepository(IConfiguration configuration,IHeaderService headerService)
+        private readonly IConfiguration _configuration;
+        private readonly IHeaderService _headerService;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<HESRepository> _logger;
+
+        public HESRepository(IConfiguration configuration, IHeaderService headerService, IHttpClientFactory httpClientFactory, ILogger<HESRepository> logger)
         {
             _configuration = configuration;
             _headerService = headerService;
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
         }
 
-        public Mensaje buscarHES(JObject jObject)
+        public async Task<Mensaje> buscarHES(JObject jObject)
         {
-            Mensaje mensaje = new Mensaje();
-
-            var url = _configuration["Http:Consultahesmigo"];
-            var request = (HttpWebRequest)WebRequest.Create(url);
-            string json = jObject.ToString();
-            request.Method = "POST";
-            request.ContentType = "application/json";
-            request.Accept = "application/json";
-            request.Headers.Add("Authorization", _configuration["Http:Autorizacion"]);
-            string idioma = _headerService.obtenerIdioma();
-            string mercaderia = "\"TIPO_SERVICIO\": \"Mercaderia\"";
-            string mercaderiaEN = "\"TIPO_SERVICIO\": \"Merchandise\"";
-            string servicio = "\"TIPO_SERVICIO\": \"Servicio\"";
-            string servicioEN = "\"TIPO_SERVICIO\": \"Service\"";
-            using (var streamWriter = new StreamWriter(request.GetRequestStream()))
+            string responseBody;
+            try
             {
-                streamWriter.Write(json);
-                streamWriter.Flush();
-                streamWriter.Close();
+                HttpClient cliente = _httpClientFactory.CreateClient(Constantes.HTTP_CLIENT_SAP);
+                responseBody = await ConsultaUtil.PostSapAsync(cliente, _configuration["Http:Consultahesmigo"], jObject.ToString());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al consultar HES en SAP");
+                return new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
+            }
+
+            if (string.IsNullOrWhiteSpace(responseBody))
+            {
+                return new Mensaje("E", "Sin respuesta - null", "");
             }
 
             try
             {
-                using (WebResponse response = request.GetResponse())
+                JObject objJsonAux = JObject.Parse(responseBody);
+
+                JToken totalRows = objJsonAux["E_TOTALROWS"];
+                if (totalRows == null || !(objJsonAux["ET_MHCAB"]?["item"] is JArray arrayMHCAB))
                 {
-                    using (Stream strReader = response.GetResponseStream())
+                    return new Mensaje("E", "No se encontraron registros", "");
+                }
+
+                if (_headerService.obtenerIdioma() != "ES")
+                {
+                    foreach (JObject cabecera in arrayMHCAB.OfType<JObject>())
                     {
-                        if (strReader != null)
+                        if (cabecera["TIPO_SERVICIO"] is JValue valor && valor.Type == JTokenType.String
+                            && TipoServicioEN.TryGetValue((string)valor, out string traducido))
                         {
-                            using (StreamReader objReader = new StreamReader(strReader))
-                            {
-                                string responseBody = objReader.ReadToEnd();
-                                JObject objJsonAux = JObject.Parse(responseBody);
-
-                                mensaje.tipo = "S";
-                                mensaje.mensaje = "";
-
-                                try
-                                {
-                                    mensaje.data = "\"E_TOTALROWS\":" + objJsonAux["E_TOTALROWS"].ToString();
-
-                                    JArray arrayMHCAB = new JArray();
-                                    arrayMHCAB = (JArray)objJsonAux["ET_MHCAB"]["item"];
-
-                                    mensaje.data = mensaje.data + ",\"ET_MHCAB\":" + arrayMHCAB.ToString();
-                                     if (idioma != "ES")
-                                    {
-                                        mensaje.data = mensaje.data.Replace(mercaderia, mercaderiaEN).Replace(servicio, servicioEN);
-
-                                    }
-
-                                    if (jObject["I_INDICADOR"].ToString().Equals("2"))
-                                    {
-                                        JArray arrayMHDET = new JArray();
-                                        arrayMHDET = (JArray)objJsonAux["ET_MHDET"]["item"];
-
-                                        mensaje.data = mensaje.data + ",\"ET_MHDET\":" + arrayMHDET.ToString();
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    mensaje.tipo = "E";
-                                    mensaje.mensaje = "No se encontraron registros";
-                                    mensaje.data = "";
-                                }
-
-                            }
-                        }
-                        else
-                        {
-                            mensaje.tipo = "E";
-                            mensaje.mensaje = "Sin respuesta - null";
-                            mensaje.data = "";
+                            cabecera["TIPO_SERVICIO"] = traducido;
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                mensaje.tipo = "E";
-                mensaje.mensaje = "No se encontraron registros";
-                mensaje.data = "";
-            }
 
-            return mensaje;
+                // SAP envía E_TOTALROWS como texto; históricamente se devuelve como número sin comillas.
+                string totalRowsJson = totalRows.Type == JTokenType.String
+                    && long.TryParse(((string)totalRows).Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long filas)
+                    ? filas.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : totalRows.ToString(Formatting.None);
+
+                string data = "\"E_TOTALROWS\":" + totalRowsJson
+                            + ",\"ET_MHCAB\":" + arrayMHCAB.ToString();
+
+                if (JsonUtil.Opcional(jObject, "I_INDICADOR") == "2")
+                {
+                    if (!(objJsonAux["ET_MHDET"]?["item"] is JArray arrayMHDET))
+                    {
+                        return new Mensaje("E", "No se encontraron registros", "");
+                    }
+                    data += ",\"ET_MHDET\":" + arrayMHDET.ToString();
+                }
+
+                return new Mensaje("S", "", data);
+            }
+            catch (JsonReaderException ex)
+            {
+                _logger.LogError(ex, "Respuesta de SAP (HES) no es un JSON válido");
+                return new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
+            }
         }
     }
 }

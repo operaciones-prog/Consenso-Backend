@@ -6,50 +6,58 @@ using esupplier.Config;
 using esupplier.Models;
 using esupplier.Services.IServices;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 
 namespace esupplier.Services
 {
     public class S3StorageService : IFileStorageService
     {
-        private readonly S3Settings _s3Settings;
-        private IAmazonS3? _s3Client;
+        // AmazonS3Client es thread-safe y costoso de crear: se comparte entre requests (por configuración).
+        private static readonly ConcurrentDictionary<string, Lazy<IAmazonS3>> Clientes = new();
 
-        public S3StorageService(IOptions<StorageSettings> storageSettings)
+        private readonly S3Settings _s3Settings;
+        private readonly ILogger<S3StorageService> _logger;
+
+        public S3StorageService(IOptions<StorageSettings> storageSettings, ILogger<S3StorageService> logger)
         {
+            // No se valida aquí: el servicio se registra aunque el proveedor activo sea OneDrive.
             _s3Settings = storageSettings.Value.S3;
-            InitializeS3Client();
+            _logger = logger;
         }
 
-        private void InitializeS3Client()
+        /// <summary>Cliente S3 compartido. Valida la configuración al usarse, no al construir el servicio.</summary>
+        private IAmazonS3 Cliente
         {
-            if (string.IsNullOrWhiteSpace(_s3Settings.BucketName))
+            get
             {
-                throw new InvalidOperationException("S3 BucketName no está configurado");
-            }
+                if (string.IsNullOrWhiteSpace(_s3Settings.BucketName))
+                {
+                    throw new InvalidOperationException("S3 BucketName no está configurado");
+                }
+                if (!_s3Settings.UseIAMRole &&
+                    (string.IsNullOrWhiteSpace(_s3Settings.AccessKeyId) || string.IsNullOrWhiteSpace(_s3Settings.SecretAccessKey)))
+                {
+                    throw new InvalidOperationException("AccessKeyId y SecretAccessKey son requeridos cuando UseIAMRole es false");
+                }
 
+                string clave = $"{_s3Settings.Region}|{_s3Settings.UseIAMRole}|{_s3Settings.AccessKeyId}";
+                return Clientes.GetOrAdd(clave, _ => new Lazy<IAmazonS3>(CrearCliente)).Value;
+            }
+        }
+
+        private IAmazonS3 CrearCliente()
+        {
             var region = RegionEndpoint.GetBySystemName(_s3Settings.Region);
 
             if (_s3Settings.UseIAMRole)
             {
                 // Usa credenciales del IAM Role (recomendado para Lambda)
-                _s3Client = new AmazonS3Client(region);
+                return new AmazonS3Client(region);
             }
-            else
-            {
-                // Usa Access Keys (desarrollo local)
-                if (string.IsNullOrWhiteSpace(_s3Settings.AccessKeyId) ||
-                    string.IsNullOrWhiteSpace(_s3Settings.SecretAccessKey))
-                {
-                    throw new InvalidOperationException("AccessKeyId y SecretAccessKey son requeridos cuando UseIAMRole es false");
-                }
 
-                var credentials = new BasicAWSCredentials(
-                    _s3Settings.AccessKeyId,
-                    _s3Settings.SecretAccessKey
-                );
-
-                _s3Client = new AmazonS3Client(credentials, region);
-            }
+            // Usa Access Keys (desarrollo local)
+            var credentials = new BasicAWSCredentials(_s3Settings.AccessKeyId, _s3Settings.SecretAccessKey);
+            return new AmazonS3Client(credentials, region);
         }
 
         private string NormalizePath(string folderPath, string fileName)
@@ -109,7 +117,7 @@ namespace esupplier.Services
                     }
                 };
 
-                var response = await _s3Client!.PutObjectAsync(request);
+                var response = await Cliente.PutObjectAsync(request);
 
                 return new FileUploadResult
                 {
@@ -122,6 +130,7 @@ namespace esupplier.Services
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al subir {Archivo} a S3", fileName);
                 return new FileUploadResult
                 {
                     Success = false,
@@ -142,7 +151,7 @@ namespace esupplier.Services
                     Key = key
                 };
 
-                var response = await _s3Client!.GetObjectAsync(request);
+                var response = await Cliente.GetObjectAsync(request);
 
                 return new FileDownloadResult
                 {
@@ -163,6 +172,7 @@ namespace esupplier.Services
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al descargar {Archivo} de S3", fileName);
                 return new FileDownloadResult
                 {
                     Success = false,
@@ -191,7 +201,7 @@ namespace esupplier.Services
                     Verb = HttpVerb.GET
                 };
 
-                string presignedUrl = _s3Client!.GetPreSignedURL(request);
+                string presignedUrl = Cliente.GetPreSignedURL(request);
                 return presignedUrl;
             }
             catch (Exception ex)
@@ -213,7 +223,7 @@ namespace esupplier.Services
                     MaxKeys = 1000
                 };
 
-                var response = await _s3Client!.ListObjectsV2Async(request);
+                var response = await Cliente.ListObjectsV2Async(request);
 
                 var fileList = new List<FileItem>();
 
@@ -257,11 +267,12 @@ namespace esupplier.Services
                     Key = key
                 };
 
-                var response = await _s3Client!.DeleteObjectAsync(request);
+                var response = await Cliente.DeleteObjectAsync(request);
                 return response.HttpStatusCode == System.Net.HttpStatusCode.NoContent;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al eliminar {Archivo} de S3", fileName);
                 return false;
             }
         }
@@ -278,15 +289,16 @@ namespace esupplier.Services
                     Key = key
                 };
 
-                await _s3Client!.GetObjectMetadataAsync(request);
+                await Cliente.GetObjectMetadataAsync(request);
                 return true;
             }
             catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 return false;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al verificar {Archivo} en S3", fileName);
                 return false;
             }
         }

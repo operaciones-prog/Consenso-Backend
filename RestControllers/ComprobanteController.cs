@@ -1,7 +1,8 @@
-﻿using System.Text;
 using esupplier.Models.Response;
 using esupplier.Services.IServices;
+using esupplier.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace esupplier.RestControllers
@@ -10,42 +11,37 @@ namespace esupplier.RestControllers
     [ApiController]
     public class ComprobanteController : ControllerBase
     {
-        private IComprobanteService _comprobanteService;
+        private readonly IComprobanteService _comprobanteService;
+        private readonly ILogger<ComprobanteController> _logger;
 
-        public ComprobanteController(IComprobanteService comprobanteService)
+        public ComprobanteController(IComprobanteService comprobanteService, ILogger<ComprobanteController> logger)
         {
             _comprobanteService = comprobanteService;
+            _logger = logger;
         }
 
         [HttpPost("buscarComprobantes")]
-        public ActionResult buscarComprobantes()
+        public async Task<ActionResult> buscarComprobantes()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _comprobanteService.buscarComprobantes(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\",\"data\":{" + msj.data + "}}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                Mensaje msj = await _comprobanteService.buscarComprobantes(jObject);
+                return Ok(ApiRespuesta.DesdeMensajeConObjeto(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en buscarComprobantes");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Comprobante.buscarComprobantes"));
             }
-
-            return Ok(rpta);
         }
     }
 }

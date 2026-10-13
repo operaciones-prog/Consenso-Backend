@@ -1,95 +1,92 @@
 using esupplier.Config;
 using esupplier.Models;
-using esupplier.Models.Response;
 using esupplier.Services.IServices;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
 using Microsoft.Identity.Client;
-using Newtonsoft.Json.Linq;
 using System.Net.Http.Headers;
 
 namespace esupplier.Services
 {
     public class OneDriveStorageService : IFileStorageService
     {
-        private readonly IConfiguracionService _configuracionService;
+        private static readonly string[] Scopes = { "https://graph.microsoft.com/.default" };
+
+        // Cliente propio solo cuando las credenciales vienen de appsettings (UseDatabase = false); se comparte entre requests.
+        private static readonly object LockConfig = new object();
+        private static GraphServiceClient? _clienteConfig;
+
+        private readonly IGraphClientProvider _graphProvider;
         private readonly StorageSettings _storageSettings;
+        private readonly ILogger<OneDriveStorageService> _logger;
         private GraphServiceClient? _graphClient;
         private string? _userEmail;
-        private bool _isInitialized = false;
 
         public OneDriveStorageService(
-            IConfiguracionService configuracionService,
-            IOptions<StorageSettings> storageSettings)
+            IGraphClientProvider graphProvider,
+            IOptions<StorageSettings> storageSettings,
+            ILogger<OneDriveStorageService> logger)
         {
-            _configuracionService = configuracionService;
+            _graphProvider = graphProvider;
             _storageSettings = storageSettings.Value;
+            _logger = logger;
         }
 
-        private async Task InitializeAsync()
+        private Task InitializeAsync()
         {
-            if (_isInitialized && _graphClient != null)
-                return;
+            if (_graphClient != null)
+                return Task.CompletedTask;
 
             try
             {
-                string clientId, clientSecret, tenantId, userEmail;
-
                 if (_storageSettings.OneDrive.UseDatabase)
                 {
-                    // Obtener credenciales de la BD (método actual)
-                    JObject jObject = new JObject
-                    {
-                        ["adm_cliente_id"] = "1001",
-                        ["tipo_constante"] = "ONEDRIVE",
-                        ["codigo_constante"] = ""
-                    };
-
-                    Mensaje msj = _configuracionService.listarConstantes(jObject);
-                    JObject jObjectList = JObject.Parse("{" + msj.data + "}");
-                    JArray jsonArray = (JArray)jObjectList["constantes"];
-
-                    clientId = jsonArray.First(x => x["codigo_constante"]!.ToString() == "CLIENT_ID")!["valor_constante"]!.ToString();
-                    clientSecret = jsonArray.First(x => x["codigo_constante"]!.ToString() == "SECRECT")!["valor_constante"]!.ToString();
-                    tenantId = jsonArray.First(x => x["codigo_constante"]!.ToString() == "TENANT_ID")!["valor_constante"]!.ToString();
-                    userEmail = jsonArray.First(x => x["codigo_constante"]!.ToString() == "MAIL")!["valor_constante"]!.ToString();
+                    // Credenciales de cfg_constante (ONEDRIVE), cacheadas por el proveedor compartido.
+                    _graphClient = _graphProvider.Cliente;
+                    _userEmail = _graphProvider.Correo;
                 }
                 else
                 {
-                    // Usar valores de appsettings
-                    clientId = _storageSettings.OneDrive.ClientId!;
-                    clientSecret = _storageSettings.OneDrive.ClientSecret!;
-                    tenantId = _storageSettings.OneDrive.TenantId!;
-                    userEmail = _storageSettings.OneDrive.UserEmail!;
+                    _graphClient = ObtenerClienteDesdeConfiguracion();
+                    _userEmail = _storageSettings.OneDrive.UserEmail;
                 }
-
-                _userEmail = userEmail;
-
-                // Crear cliente MSAL
-                IConfidentialClientApplication confidentialClientApplication = ConfidentialClientApplicationBuilder
-                    .Create(clientId)
-                    .WithTenantId(tenantId)
-                    .WithClientSecret(clientSecret)
-                    .Build();
-
-                // Obtener token
-                string[] scopes = { "https://graph.microsoft.com/.default" };
-                var authResult = await confidentialClientApplication.AcquireTokenForClient(scopes).ExecuteAsync();
-
-                // Crear GraphServiceClient
-                _graphClient = new GraphServiceClient(
-                    new DelegateAuthenticationProvider((requestMessage) =>
-                    {
-                        requestMessage.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authResult.AccessToken);
-                        return Task.CompletedTask;
-                    })
-                );
-
-                _isInitialized = true;
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Error al inicializar OneDrive: {ex.Message}", ex);
+                _logger.LogError(ex, "Error al inicializar OneDrive");
+                throw new InvalidOperationException("Error al inicializar OneDrive", ex);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private GraphServiceClient ObtenerClienteDesdeConfiguracion()
+        {
+            if (_clienteConfig != null) return _clienteConfig;
+
+            lock (LockConfig)
+            {
+                if (_clienteConfig != null) return _clienteConfig;
+
+                var oneDrive = _storageSettings.OneDrive;
+                if (string.IsNullOrWhiteSpace(oneDrive.ClientId) || string.IsNullOrWhiteSpace(oneDrive.ClientSecret) || string.IsNullOrWhiteSpace(oneDrive.TenantId))
+                {
+                    throw new InvalidOperationException("Faltan credenciales de OneDrive en Storage:OneDrive (ClientId/ClientSecret/TenantId).");
+                }
+
+                IConfidentialClientApplication app = ConfidentialClientApplicationBuilder
+                    .Create(oneDrive.ClientId)
+                    .WithTenantId(oneDrive.TenantId)
+                    .WithClientSecret(oneDrive.ClientSecret)
+                    .Build();
+
+                _clienteConfig = new GraphServiceClient(new DelegateAuthenticationProvider(async request =>
+                {
+                    // MSAL reutiliza el token en caché hasta que expira.
+                    var resultado = await app.AcquireTokenForClient(Scopes).ExecuteAsync();
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", resultado.AccessToken);
+                }));
+                return _clienteConfig;
             }
         }
 
@@ -135,6 +132,7 @@ namespace esupplier.Services
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al subir {Archivo} a OneDrive", fileName);
                 return new FileUploadResult
                 {
                     Success = false,
@@ -178,6 +176,7 @@ namespace esupplier.Services
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al descargar {Archivo} de OneDrive", fileName);
                 return new FileDownloadResult
                 {
                     Success = false,
@@ -272,8 +271,9 @@ namespace esupplier.Services
 
                 return false;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error al eliminar {Archivo} de OneDrive", fileName);
                 return false;
             }
         }
@@ -293,8 +293,13 @@ namespace esupplier.Services
 
                 return driveItem != null;
             }
-            catch
+            catch (ServiceException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al verificar {Archivo} en OneDrive", fileName);
                 return false;
             }
         }

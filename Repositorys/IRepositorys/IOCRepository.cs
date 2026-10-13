@@ -1,4 +1,4 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models.Response;
 using Newtonsoft.Json.Linq;
 
 namespace esupplier.Repositorys.IRepositorys
@@ -15,8 +15,8 @@ namespace esupplier.Repositorys.IRepositorys
         public Mensaje listarArchivoOc(string oc,string sociedad, bool ruta);
         public Mensaje registrarArchivoOc(string numero_oc, string ruta, string nombre_original, string nombre_registro, string tipo, string sociedad, string reg_usuario);
         public Mensaje notificarOCPendiente();
-        public Mensaje obtenerOC(JObject jObject);
-        public Mensaje obtenerOCHistorico(JObject jObject);
+        public Task<Mensaje> obtenerOC(JObject jObject);
+        public Task<Mensaje> obtenerOCHistorico(JObject jObject);
 
     }
 }

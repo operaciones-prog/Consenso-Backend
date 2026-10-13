@@ -1,153 +1,249 @@
-﻿using esupplier.Models.Response;
+using System.Data;
+using System.Globalization;
+using esupplier.Models;
+using esupplier.Models.Response;
 using esupplier.Repositorys.IRepositorys;
+using esupplier.Utils;
 using Microsoft.Data.SqlClient;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using System.Data;
 
 namespace esupplier.Repositorys
 {
     public class UsuarioRepository : IUsuarioRepository
     {
-        private IConfiguration _configuration;
+        // El frontend puede comparar este texto: se mantiene tal cual.
+        private const string MensajeCredencialesInvalidas = "Usuario o Clave incorrrecto";
 
-        public UsuarioRepository(IConfiguration configuration)
+        private readonly IConfiguration _configuration;
+        private readonly ILogger<UsuarioRepository> _logger;
+
+        public UsuarioRepository(IConfiguration configuration, ILogger<UsuarioRepository> logger)
         {
             _configuration = configuration;
+            _logger = logger;
         }
 
-        public Mensaje validarUsuario(JObject jObject)
+        public ResultadoLogin validarUsuario(JObject jObject)
         {
-            Mensaje mensaje = new Mensaje();
-
-            string adm_cliente_id = "";
-            string codigo_sociedad = "";
-            string usuario = "";
-            string clave = "";
-            string codigo_referencia = "";
-            int id_rol = 0;
-
-            DataTable dt = new DataTable();
+            ResultadoLogin resultado = new ResultadoLogin();
+            Mensaje mensaje = resultado.Mensaje;
 
             try
             {
-                adm_cliente_id = jObject["adm_cliente_id"].ToString();
-                codigo_sociedad = jObject["codigo_sociedad"].ToString();
-                usuario = jObject["usuario"].ToString();
-                clave = jObject["clave"].ToString();
+                string adm_cliente_id = JsonUtil.Requerido(jObject, "adm_cliente_id");
+                string codigo_sociedad = JsonUtil.Requerido(jObject, "codigo_sociedad");
+                string usuario = JsonUtil.Requerido(jObject, "usuario");
+                string clave = JsonUtil.Requerido(jObject, "clave");
+
+                resultado.AdmClienteId = adm_cliente_id;
+                resultado.CodigoSociedad = codigo_sociedad;
+                resultado.Usuario = usuario;
 
                 using (SqlConnection bdSql = new SqlConnection(_configuration.GetConnectionString("esupplier")))
                 {
                     bdSql.Open();
-                    SqlCommand bdComando = new SqlCommand("sp_validarUsuario", bdSql);
-                    bdComando.CommandType = CommandType.StoredProcedure;
-                    bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", adm_cliente_id));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", codigo_sociedad));
-                    bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
-                    bdComando.Parameters.Add(new SqlParameter("@clave", clave));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_referencia", SqlDbType.VarChar, 18));
-                    bdComando.Parameters[4].Direction = ParameterDirection.Output;
-                    bdComando.Parameters.Add(new SqlParameter("@rol_id", SqlDbType.Int));
-                    bdComando.Parameters[5].Direction = ParameterDirection.Output;
-                    using (SqlDataAdapter adapter = new SqlDataAdapter((SqlCommand)bdComando))
-                    {
-                        adapter.Fill(dt);
-                        codigo_referencia = bdComando.Parameters[4].Value.ToString();
-                        id_rol = Int32.Parse(bdComando.Parameters[5].Value.ToString());
 
-                        if (codigo_referencia.Equals(""))
-                        {
-                            mensaje.tipo = "E";
-                            mensaje.mensaje = "Usuario o Clave incorrrecto";
-                        }
-                        else
-                        {
-                            mensaje.tipo = "S";
-                            mensaje.mensaje = "";
-                            mensaje.data = "\"usuario\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
-                        }
-                        
-                    }
-
-                    if (id_rol > 0 && mensaje.tipo.Equals("S"))
+                    // 1. Credenciales almacenadas (hash o texto plano heredado) de los usuarios activos.
+                    var candidatos = new List<(int regId, string claveAlmacenada)>();
+                    using (SqlCommand cmdCred = new SqlCommand("sp_obtenerCredencialUsuario", bdSql))
                     {
-                        bdComando = new SqlCommand("sp_obtenerPermisos", bdSql);
-                        bdComando.CommandType = CommandType.StoredProcedure;
-                        bdComando.Parameters.Add(new SqlParameter("@reg_id_rol", id_rol));
-                        using (SqlDataAdapter adapter = new SqlDataAdapter((SqlCommand)bdComando))
+                        cmdCred.CommandType = CommandType.StoredProcedure;
+                        cmdCred.Parameters.Add("@adm_cliente_id", SqlDbType.VarChar, 12).Value = adm_cliente_id;
+                        cmdCred.Parameters.Add("@codigo_sociedad", SqlDbType.VarChar, 18).Value = codigo_sociedad;
+                        cmdCred.Parameters.Add("@usuario", SqlDbType.VarChar, 50).Value = usuario;
+                        using (SqlDataReader lector = cmdCred.ExecuteReader())
                         {
-                            dt = new DataTable();
-                            adapter.Fill(dt);
-                            mensaje.tipo = "S";
-                            mensaje.mensaje = "";
-                            mensaje.data = mensaje.data + ",\"permisos\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+                            while (lector.Read())
+                            {
+                                int regId = Convert.ToInt32(lector["reg_id"], CultureInfo.InvariantCulture);
+                                string almacenada = lector["clave"] == DBNull.Value ? "" : lector["clave"].ToString();
+                                candidatos.Add((regId, almacenada));
+                            }
                         }
                     }
 
-                    if (!codigo_referencia.Equals("0") && mensaje.tipo.Equals("S"))
+                    // 2. Verificación de la clave.
+                    int regIdValido = 0;
+                    string claveAlmacenada = null;
+                    bool requiereRehash = false;
+                    foreach (var candidato in candidatos)
                     {
-                        bdComando = new SqlCommand("sp_obtenerProveedor", bdSql);
+                        if (PasswordHasher.Verificar(clave, candidato.claveAlmacenada, out bool rehash))
+                        {
+                            regIdValido = candidato.regId;
+                            claveAlmacenada = candidato.claveAlmacenada;
+                            requiereRehash = rehash;
+                            break;
+                        }
+                    }
+
+                    if (claveAlmacenada == null)
+                    {
+                        mensaje.tipo = "E";
+                        mensaje.mensaje = MensajeCredencialesInvalidas;
+                        mensaje.data = "";
+                        return resultado;
+                    }
+
+                    resultado.RegId = regIdValido;
+
+                    // 3. Migración transparente: clave heredada (o hash débil) -> hash actual.
+                    if (requiereRehash)
+                    {
+                        string nuevoHash = PasswordHasher.Hashear(clave);
+                        try
+                        {
+                            using (SqlCommand cmdRehash = new SqlCommand("sp_actualizarClaveUsuario", bdSql))
+                            {
+                                cmdRehash.CommandType = CommandType.StoredProcedure;
+                                cmdRehash.Parameters.Add("@reg_id", SqlDbType.Int).Value = regIdValido;
+                                cmdRehash.Parameters.Add("@clave", SqlDbType.VarChar, 256).Value = nuevoHash;
+                                cmdRehash.ExecuteNonQuery();
+                            }
+                            claveAlmacenada = nuevoHash;
+                        }
+                        catch (Exception exRehash)
+                        {
+                            _logger.LogWarning(exRehash, "No se pudo re-hashear la clave del usuario reg_id {RegId}; el login continúa.", regIdValido);
+                        }
+                    }
+
+                    // 4. sp_validarUsuario recibe el valor almacenado para que su predicado clave = @clave coincida.
+                    string codigo_referencia;
+                    int id_rol;
+                    DataTable dt = new DataTable();
+                    using (SqlCommand bdComando = new SqlCommand("sp_validarUsuario", bdSql))
+                    {
                         bdComando.CommandType = CommandType.StoredProcedure;
                         bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", adm_cliente_id));
-                        bdComando.Parameters.Add(new SqlParameter("@sociedad", codigo_sociedad));
-                        bdComando.Parameters.Add(new SqlParameter("@codigo_proveedor", codigo_referencia));
-                        using (SqlDataAdapter adapter = new SqlDataAdapter((SqlCommand)bdComando))
+                        bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", codigo_sociedad));
+                        bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
+                        bdComando.Parameters.Add("@clave", SqlDbType.VarChar, 256).Value = claveAlmacenada;
+                        SqlParameter pCodigoReferencia = bdComando.Parameters.Add("@codigo_referencia", SqlDbType.VarChar, 18);
+                        pCodigoReferencia.Direction = ParameterDirection.Output;
+                        SqlParameter pRolId = bdComando.Parameters.Add("@rol_id", SqlDbType.Int);
+                        pRolId.Direction = ParameterDirection.Output;
+
+                        using (SqlDataAdapter adapter = new SqlDataAdapter(bdComando))
                         {
-                            dt = new DataTable();
                             adapter.Fill(dt);
-                            mensaje.tipo = "S";
-                            mensaje.mensaje = "";
-                            mensaje.data = mensaje.data + ",\"proveedor\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+                        }
+
+                        codigo_referencia = pCodigoReferencia.Value == DBNull.Value ? "" : pCodigoReferencia.Value.ToString();
+                        id_rol = pRolId.Value == DBNull.Value ? 0 : Convert.ToInt32(pRolId.Value, CultureInfo.InvariantCulture);
+                    }
+
+                    if (codigo_referencia.Equals(""))
+                    {
+                        mensaje.tipo = "E";
+                        mensaje.mensaje = MensajeCredencialesInvalidas;
+                        mensaje.data = "";
+                        return resultado;
+                    }
+
+                    QuitarColumnaClave(dt);
+                    resultado.RolId = id_rol;
+                    resultado.CodigoReferencia = codigo_referencia;
+
+                    mensaje.tipo = "S";
+                    mensaje.mensaje = "";
+                    mensaje.data = "\"usuario\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+
+                    if (id_rol > 0)
+                    {
+                        using (SqlCommand bdComando = new SqlCommand("sp_obtenerPermisos", bdSql))
+                        {
+                            bdComando.CommandType = CommandType.StoredProcedure;
+                            bdComando.Parameters.Add(new SqlParameter("@reg_id_rol", id_rol));
+                            using (SqlDataAdapter adapter = new SqlDataAdapter(bdComando))
+                            {
+                                dt = new DataTable();
+                                adapter.Fill(dt);
+                                mensaje.data = mensaje.data + ",\"permisos\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+                            }
                         }
                     }
-                    bdSql.Close();
+
+                    if (!codigo_referencia.Equals("0"))
+                    {
+                        using (SqlCommand bdComando = new SqlCommand("sp_obtenerProveedor", bdSql))
+                        {
+                            bdComando.CommandType = CommandType.StoredProcedure;
+                            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", adm_cliente_id));
+                            bdComando.Parameters.Add(new SqlParameter("@sociedad", codigo_sociedad));
+                            bdComando.Parameters.Add(new SqlParameter("@codigo_proveedor", codigo_referencia));
+                            using (SqlDataAdapter adapter = new SqlDataAdapter(bdComando))
+                            {
+                                dt = new DataTable();
+                                adapter.Fill(dt);
+                                mensaje.data = mensaje.data + ",\"proveedor\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+                            }
+                        }
+                    }
                 }
+            }
+            catch (CampoRequeridoException ex)
+            {
+                resultado.Mensaje = new Mensaje("E", ex.Message, "");
             }
             catch (Exception ex)
             {
-                mensaje.tipo = "E";
-                mensaje.mensaje = "Usuario o Clave incorrrecto";
-                mensaje.data = "";
+                _logger.LogError(ex, "Error al validar el usuario");
+                resultado.Mensaje = new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
             }
 
-            return mensaje;
+            return resultado;
         }
 
         public Mensaje listarUsuario(JObject jObject)
         {
             Mensaje mensaje = new Mensaje();
-
             DataTable dt = new DataTable();
 
-            try 
+            try
             {
+                string indicador = JsonUtil.Requerido(jObject, "indicador");
+                string adm_cliente_id = JsonUtil.Requerido(jObject, "adm_cliente_id");
+                string codigo_sociedad = JsonUtil.Requerido(jObject, "codigo_sociedad");
+                string codigo_referencia = JsonUtil.Requerido(jObject, "codigo_referencia");
+                string denominacion_fiscal = JsonUtil.Requerido(jObject, "denominacion_fiscal");
+                string identificacion_fiscal = JsonUtil.Requerido(jObject, "identificacion_fiscal");
+
                 using (SqlConnection bdSql = new SqlConnection(_configuration.GetConnectionString("esupplier")))
                 {
                     bdSql.Open();
-                    SqlCommand bdComando = new SqlCommand("sp_listarUsuario", bdSql);
-                    bdComando.CommandType = CommandType.StoredProcedure;
-                    bdComando.Parameters.Add(new SqlParameter("@indicador", jObject["indicador"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", jObject["adm_cliente_id"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", jObject["codigo_sociedad"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_referencia", jObject["codigo_referencia"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@denominacion_fiscal", jObject["denominacion_fiscal"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@identificacion_fiscal", jObject["identificacion_fiscal"].ToString()));
-                    using (SqlDataAdapter adapter = new SqlDataAdapter((SqlCommand)bdComando))
+                    using (SqlCommand bdComando = new SqlCommand("sp_listarUsuario", bdSql))
                     {
-                        adapter.Fill(dt);
-
-                        mensaje.tipo = "S";
-                        mensaje.mensaje = "";
-                        mensaje.data = "\"usuarios\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+                        bdComando.CommandType = CommandType.StoredProcedure;
+                        bdComando.Parameters.Add(new SqlParameter("@indicador", indicador));
+                        bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", adm_cliente_id));
+                        bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", codigo_sociedad));
+                        bdComando.Parameters.Add(new SqlParameter("@codigo_referencia", codigo_referencia));
+                        bdComando.Parameters.Add(new SqlParameter("@denominacion_fiscal", denominacion_fiscal));
+                        bdComando.Parameters.Add(new SqlParameter("@identificacion_fiscal", identificacion_fiscal));
+                        using (SqlDataAdapter adapter = new SqlDataAdapter(bdComando))
+                        {
+                            adapter.Fill(dt);
+                        }
                     }
-                    bdSql.Close();
                 }
+
+                // Defensa en profundidad: nunca devolver la clave aunque el SP la incluya.
+                QuitarColumnaClave(dt);
+
+                mensaje.tipo = "S";
+                mensaje.mensaje = "";
+                mensaje.data = "\"usuarios\":" + JsonConvert.SerializeObject(dt, Formatting.Indented);
+            }
+            catch (CampoRequeridoException ex)
+            {
+                mensaje = new Mensaje("E", ex.Message, "");
             }
             catch (Exception ex)
             {
-                mensaje.tipo = "E";
-                mensaje.mensaje = "No se Encontraron Registros";
-                mensaje.data = "";
+                _logger.LogError(ex, "Error al listar usuarios");
+                mensaje = new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
             }
 
             return mensaje;
@@ -159,53 +255,77 @@ namespace esupplier.Repositorys
 
             try
             {
+                int reg_id = int.Parse(JsonUtil.Requerido(jObject, "reg_id"), NumberStyles.Integer, CultureInfo.InvariantCulture);
+                int rol_id = int.Parse(JsonUtil.Requerido(jObject, "rol_id"), NumberStyles.Integer, CultureInfo.InvariantCulture);
+                int referencia_id = int.Parse(JsonUtil.Requerido(jObject, "referencia_id"), NumberStyles.Integer, CultureInfo.InvariantCulture);
+                string clave = JsonUtil.Opcional(jObject, "clave");
+
+                // Alta: clave obligatoria. Modificación sin clave: el SP conserva la clave actual.
+                if (reg_id == 0 && string.IsNullOrEmpty(clave))
+                {
+                    return new Mensaje("E", "La clave es obligatoria", "");
+                }
+                object claveParametro = string.IsNullOrEmpty(clave) ? DBNull.Value : PasswordHasher.Hashear(clave);
+
                 using (SqlConnection bdSql = new SqlConnection(_configuration.GetConnectionString("esupplier")))
                 {
-
                     bdSql.Open();
 
-                    SqlCommand bdComando = new SqlCommand("sp_mantenerUsuario", bdSql);
-                    bdComando.CommandType = CommandType.StoredProcedure;
-                    bdComando.Parameters.Add(new SqlParameter("@reg_id", Convert.ToInt32(jObject["reg_id"].ToString())));
-                    bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", jObject["adm_cliente_id"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", jObject["codigo_sociedad"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_referencia", jObject["codigo_referencia"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@codigo_referencia_aux", jObject["codigo_referencia_aux"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@usuario", jObject["usuario"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@clave", jObject["clave"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@rol_id", Convert.ToInt32(jObject["rol_id"].ToString())));
-                    bdComando.Parameters.Add(new SqlParameter("@denominacion_usuario", jObject["denominacion_usuario"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@correo_referencia", jObject["correo_referencia"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@referencia_id", Convert.ToInt32(jObject["referencia_id"].ToString())));
-                    bdComando.Parameters.Add(new SqlParameter("@idioma", jObject["idioma"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@reg_estado", jObject["reg_estado"].ToString()));
-                    bdComando.Parameters.Add(new SqlParameter("@reg_usuario_creacion", jObject["reg_usuario_creacion"].ToString()));
+                    using (SqlCommand bdComando = new SqlCommand("sp_mantenerUsuario", bdSql))
+                    {
+                        bdComando.CommandType = CommandType.StoredProcedure;
+                        bdComando.Parameters.Add(new SqlParameter("@reg_id", reg_id));
+                        bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", JsonUtil.Requerido(jObject, "adm_cliente_id")));
+                        bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", JsonUtil.Requerido(jObject, "codigo_sociedad")));
+                        bdComando.Parameters.Add(new SqlParameter("@codigo_referencia", JsonUtil.Requerido(jObject, "codigo_referencia")));
+                        bdComando.Parameters.Add(new SqlParameter("@codigo_referencia_aux", JsonUtil.Requerido(jObject, "codigo_referencia_aux")));
+                        bdComando.Parameters.Add(new SqlParameter("@usuario", JsonUtil.Requerido(jObject, "usuario")));
+                        bdComando.Parameters.Add("@clave", SqlDbType.VarChar, 256).Value = claveParametro;
+                        bdComando.Parameters.Add(new SqlParameter("@rol_id", rol_id));
+                        bdComando.Parameters.Add(new SqlParameter("@denominacion_usuario", JsonUtil.Requerido(jObject, "denominacion_usuario")));
+                        bdComando.Parameters.Add(new SqlParameter("@correo_referencia", JsonUtil.Requerido(jObject, "correo_referencia")));
+                        bdComando.Parameters.Add(new SqlParameter("@referencia_id", referencia_id));
+                        bdComando.Parameters.Add(new SqlParameter("@idioma", JsonUtil.Requerido(jObject, "idioma")));
+                        bdComando.Parameters.Add(new SqlParameter("@reg_estado", JsonUtil.Requerido(jObject, "reg_estado")));
+                        bdComando.Parameters.Add(new SqlParameter("@reg_usuario_creacion", JsonUtil.Requerido(jObject, "reg_usuario_creacion")));
 
-                    bdComando.ExecuteNonQuery();
-
-                    bdSql.Close();
+                        bdComando.ExecuteNonQuery();
+                    }
                 }
 
                 mensaje.tipo = "S";
-                if (jObject["reg_id"].ToString().Equals("0"))
-                {
-                    mensaje.mensaje = "Registrado correctamente";
-                }
-                else
-                {
-                    mensaje.mensaje = "Modificado correctamente";
-                }
+                mensaje.mensaje = reg_id == 0 ? "Registrado correctamente" : "Modificado correctamente";
                 mensaje.data = "";
+            }
+            catch (CampoRequeridoException ex)
+            {
+                mensaje = new Mensaje("E", ex.Message, "");
+            }
+            catch (FormatException ex)
+            {
+                _logger.LogWarning(ex, "Valor numérico inválido al mantener usuario");
+                mensaje = new Mensaje("E", "Los campos reg_id, rol_id y referencia_id deben ser numéricos", "");
+            }
+            catch (SqlException ex) when (ex.Number == 2627 || ex.Number == 2601)
+            {
+                // Violación de clave única / índice único.
+                mensaje = new Mensaje("E", "Usuario ya existe", "");
             }
             catch (Exception ex)
             {
-                mensaje.tipo = "E";
-                mensaje.mensaje = "Usuario ya existe";
-                mensaje.data = "";
+                _logger.LogError(ex, "Error al mantener usuario");
+                mensaje = new Mensaje("E", ApiRespuesta.MensajeErrorGenerico, "");
             }
 
             return mensaje;
         }
 
+        private static void QuitarColumnaClave(DataTable dt)
+        {
+            if (dt != null && dt.Columns.Contains("clave"))
+            {
+                dt.Columns.Remove("clave");
+            }
+        }
     }
 }

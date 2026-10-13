@@ -1,9 +1,8 @@
-﻿using System.Text;
 using esupplier.Models.Response;
-using esupplier.Services;
 using esupplier.Services.IServices;
 using esupplier.Utils;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace esupplier.ResControllers
@@ -12,264 +11,196 @@ namespace esupplier.ResControllers
     [ApiController]
     public class ConfiguracionController : ControllerBase
     {
-        private IConfiguracionService _configuracionService;
+        private readonly IConfiguracionService _configuracionService;
+        private readonly ILogger<ConfiguracionController> _logger;
 
-        public ConfiguracionController(IConfiguracionService configuracionService)
+        public ConfiguracionController(IConfiguracionService configuracionService, ILogger<ConfiguracionController> logger)
         {
             _configuracionService = configuracionService;
+            _logger = logger;
         }
 
         [HttpPost("listarConstantes")]
-        public ActionResult listarConstantes()
+        public async Task<ActionResult> listarConstantes()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _configuracionService.listarConstantes(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\",\"data\":{" + msj.data + "}}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                // Endpoint público: los valores sensibles se devuelven enmascarados.
+                Mensaje msj = _configuracionService.listarConstantesPublico(jObject);
+                return Ok(ApiRespuesta.DesdeMensajeConObjeto(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en listarConstantes");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.listarConstantes"));
             }
-
-            return Ok(rpta);
         }
 
         [HttpPost("mantenerConstante")]
-        public ActionResult mantenerConstante()
+        public async Task<ActionResult> mantenerConstante()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _configuracionService.mantenerConstante(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\"}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                Mensaje msj = _configuracionService.mantenerConstante(jObject);
+                return Ok(ApiRespuesta.DesdeMensaje(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en mantenerConstante");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.mantenerConstante"));
             }
-
-            return Ok(rpta);
         }
 
         [HttpPost("listarSociedad")]
-        public ActionResult listarSociedad()
+        public async Task<ActionResult> listarSociedad()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _configuracionService.listarSociedad(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\",\"data\":{" + msj.data + "}}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                Mensaje msj = _configuracionService.listarSociedad(jObject);
+                return Ok(ApiRespuesta.DesdeMensajeConObjeto(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en listarSociedad");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.listarSociedad"));
             }
-
-            return Ok(rpta);
         }
 
         [HttpPost("mantenerSociedad")]
-        public ActionResult mantenerSociedad()
+        public async Task<ActionResult> mantenerSociedad()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _configuracionService.mantenerSociedad(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\"}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                Mensaje msj = _configuracionService.mantenerSociedad(jObject);
+                return Ok(ApiRespuesta.DesdeMensaje(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en mantenerSociedad");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.mantenerSociedad"));
             }
-
-            return Ok(rpta);
         }
-
-
 
         [HttpGet("listarCalificacionPro")]
         public ActionResult listarCalificacionPro()
         {
-            string rpta = "";
             try
             {
-                JObject jObject = new JObject();
-                jObject["adm_cliente_id"] = Constantes.ADM_CLIENTE;
-                jObject["tipo_constante"] = "PRO_CALI";
-                jObject["codigo_constante"] = "";
-                Mensaje msj = _configuracionService.listarConstantes(jObject);
-
-                JObject jObjectList = JObject.Parse("{" + msj.data + "}");
-                JArray jsonArray = (JArray)jObjectList["constantes"];
-
-
-                if (msj.tipo.Equals("S"))
+                JObject jObject = new JObject
                 {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\",\"data\":" + jsonArray + "}";
-                }
-                else
+                    ["adm_cliente_id"] = Constantes.ADM_CLIENTE,
+                    ["tipo_constante"] = "PRO_CALI",
+                    ["codigo_constante"] = ""
+                };
+                Mensaje msj = _configuracionService.listarConstantesPublico(jObject);
+                if (msj == null || msj.tipo != "S")
                 {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
+                    return Ok(ApiRespuesta.DesdeMensaje(msj));
                 }
 
+                JToken constantes = JObject.Parse("{" + msj.data + "}")["constantes"] ?? new JArray();
+                return Ok(ApiRespuesta.ExitoConJson(msj.mensaje, constantes.ToString(Formatting.None)));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.listarCalificacionPro"));
             }
-
-            return Ok(rpta);
         }
-
 
         [HttpGet("listarCondicionPago")]
         public ActionResult listarCondicionPago()
         {
-            string rpta = "";
             try
             {
                 Mensaje msj = _configuracionService.listarCondicionPago();
-
-                JObject jObjectList = JObject.Parse("{" + msj.data + "}");
-                JArray jsonArray = (JArray)jObjectList["condiciones"];
-
-
-                if (msj.tipo.Equals("S"))
+                if (msj == null || msj.tipo != "S")
                 {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\",\"data\":" + jsonArray + "}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
+                    return Ok(ApiRespuesta.DesdeMensaje(msj));
                 }
 
+                JToken condiciones = JObject.Parse("{" + msj.data + "}")["condiciones"] ?? new JArray();
+                return Ok(ApiRespuesta.ExitoConJson(msj.mensaje, condiciones.ToString(Formatting.None)));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.listarCondicionPago"));
             }
-
-            return Ok(rpta);
         }
 
         [HttpPost("registrarCondicionPago")]
-        public ActionResult registrarCondicionPago()
+        public async Task<ActionResult> registrarCondicionPago()
         {
-            string rpta = "";
             try
             {
-                StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8);
-                string content = reader.ReadToEndAsync().Result.ToString();
-                JObject jObject = JObject.Parse(content);
-
-                Mensaje msj = new Mensaje();
-                msj = _configuracionService.registrarCondicionPago(jObject);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\"}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                JObject jObject = await JsonUtil.LeerBodyAsync(Request);
+                Mensaje msj = _configuracionService.registrarCondicionPago(jObject);
+                return Ok(ApiRespuesta.DesdeMensaje(msj));
+            }
+            catch (Exception e) when (e is CampoRequeridoException || e is ArgumentException)
+            {
+                return Ok(ApiRespuesta.Error(e.Message));
+            }
+            catch (JsonReaderException e)
+            {
+                _logger.LogWarning(e, "Body inválido en registrarCondicionPago");
+                return Ok(ApiRespuesta.Error("El cuerpo de la petición no es un JSON válido."));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.registrarCondicionPago"));
             }
-
-            return Ok(rpta);
         }
 
-
+        // Se mantiene el GET histórico usado por el frontend; DELETE es el verbo correcto.
         [HttpGet("eliminarCondicionPago/{id}")]
-        // [Authorize]
-        public ActionResult listarArchivo( [FromRoute] int id)
+        [HttpDelete("eliminarCondicionPago/{id}")]
+        public ActionResult eliminarCondicionPago([FromRoute] int id)
         {
-            string rpta = "";
             try
             {
-                //var claims = HttpContext.User.Claims;
-                Mensaje msj = new Mensaje();
-                msj = _configuracionService.eliminarCondicionPago(id);
-
-                if (msj.tipo.Equals("S"))
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"S\"}";
-                }
-                else
-                {
-                    rpta = "{\"message\":\"" + msj.mensaje + "\",\"type\":\"E\"}";
-                }
-
+                Mensaje msj = _configuracionService.eliminarCondicionPago(id);
+                return Ok(ApiRespuesta.DesdeMensaje(msj));
             }
             catch (Exception e)
             {
-                rpta = "{\"message\":\"" + e.ToString() + "\",\"type\":\"E\"}";
+                return Ok(ApiRespuesta.ErrorInesperado(_logger, e, "Configuracion.eliminarCondicionPago"));
             }
-
-            return Ok(rpta);
         }
-
     }
 }

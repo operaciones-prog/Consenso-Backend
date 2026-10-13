@@ -98,7 +98,7 @@ Agrega estas variables (usa tus valores de `appsettings.Production.json`):
 
 ```
 Key: ConnectionStrings__esupplier
-Value: Server=34.46.87.43;DataBase=DBESUPPLIER;User Id=sqlserver;Password=XlJYG$+JJzr_6>oy;Trusted_Connection=False;TrustServerCertificate=True;MultipleActiveResultSets=True
+Value: <cadena de conexión: configurar en Lambda o Secrets Manager, nunca en el repo>
 
 Key: Http__Consultahesmigo
 Value: https://l250890-iflmap.hcisbp.us3.hana.ondemand.com/http/prd/hes/consultahesmigo
@@ -119,7 +119,7 @@ Key: Http__ConsultarOCHistorico
 Value: https://l250890-iflmap.hcisbp.us3.hana.ondemand.com/http/prd/oc/consultarOCHistorico
 
 Key: Http__Autorizacion
-Value: Basic UzAwMjU3ODc1MzY6RTFzdXQ1cy5kZXMk
+Value: <Basic auth de SAP CPI: configurar en Lambda o Secrets Manager, nunca en el repo>
 
 Key: Web__url
 Value: https://consenso.esupplier.biz

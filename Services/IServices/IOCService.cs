@@ -1,4 +1,4 @@
-﻿using esupplier.Models.Response;
+using esupplier.Models.Response;
 using Newtonsoft.Json.Linq;
 
 namespace esupplier.Services.IServices
@@ -15,7 +15,7 @@ namespace esupplier.Services.IServices
         public Mensaje obtenerTipoOC();
         public Mensaje eliminarArchivoOc(int id, string usuario);
         public Mensaje notificarOCPendiente();
-        public Mensaje obtenerOC(JObject jObject);
-        public Mensaje obtenerOCHistorico(JObject jObject);
+        public Task<Mensaje> obtenerOC(JObject jObject);
+        public Task<Mensaje> obtenerOCHistorico(JObject jObject);
     }
 }
