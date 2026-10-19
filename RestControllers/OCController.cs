@@ -1,10 +1,11 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO.Compression;
 using esupplier.Models;
 using esupplier.Models.Response;
 using esupplier.Services;
 using esupplier.Services.IServices;
 using esupplier.Utils;
+using esupplier.Middleware.Autorizacion;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using Newtonsoft.Json.Linq;
@@ -42,6 +43,7 @@ namespace esupplier.RestControllers
         // Unidad de OneDrive del buzón configurado (las credenciales se cargan al primer uso)
         private IDriveRequestBuilder Drive => _graphProvider.Cliente.Users[_graphProvider.Correo].Drive;
 
+        [ProveedorDelToken("codigo_proveedor")]
         [HttpPost("buscarOC")]
         public async Task<ActionResult> buscarOC()
         {
@@ -57,6 +59,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("$.Cabecera[*].Proveedor")]
         [HttpPost("registrarOCHistorico")]
         public async Task<ActionResult> registrarOCHistorico()
         {
@@ -72,6 +75,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("$.Cabecera[*].Proveedor")]
         [HttpPost("registrarOC")]
         public async Task<ActionResult> registrarOC()
         {
@@ -411,6 +415,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [SoloInternos]
         [HttpGet("notificarOCPendiente")]
         [HttpPost("notificarOCPendiente")]
         public ActionResult notificarOCPendiente()
@@ -426,6 +431,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("codigo_proveedor")]
         [HttpPost("obtenerOC")]
         public async Task<ActionResult> obtenerOC()
         {

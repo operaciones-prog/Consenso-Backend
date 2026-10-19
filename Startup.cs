@@ -67,6 +67,7 @@ namespace esupplier
             services.AddScoped<IRepositorioService, RepositorioService>();
             services.AddScoped<IRepositorioRepository, RepositorioRepository>();
             services.AddScoped<IHeaderService, HeaderService>();
+            services.AddScoped<esupplier.Services.Auth.IUsuarioActual, esupplier.Services.Auth.UsuarioActual>();
 
             // Cliente de Microsoft Graph compartido (credenciales y token cacheados)
             services.AddSingleton<IGraphClientProvider, GraphClientProvider>();

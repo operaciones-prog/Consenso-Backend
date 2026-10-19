@@ -1,6 +1,8 @@
-using esupplier.Models.Response;
+﻿using esupplier.Models.Response;
 using esupplier.Services.IServices;
 using esupplier.Utils;
+using esupplier.Middleware.Autorizacion;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -45,6 +47,7 @@ namespace esupplier.ResControllers
             }
         }
 
+        [SoloInternos]
         [HttpPost("mantenerConstante")]
         public async Task<ActionResult> mantenerConstante()
         {
@@ -69,6 +72,7 @@ namespace esupplier.ResControllers
             }
         }
 
+        [AllowAnonymous] // el login la necesita antes de iniciar sesión
         [HttpPost("listarSociedad")]
         public async Task<ActionResult> listarSociedad()
         {
@@ -93,6 +97,7 @@ namespace esupplier.ResControllers
             }
         }
 
+        [SoloInternos]
         [HttpPost("mantenerSociedad")]
         public async Task<ActionResult> mantenerSociedad()
         {
@@ -163,6 +168,7 @@ namespace esupplier.ResControllers
             }
         }
 
+        [SoloInternos]
         [HttpPost("registrarCondicionPago")]
         public async Task<ActionResult> registrarCondicionPago()
         {
@@ -188,6 +194,7 @@ namespace esupplier.ResControllers
         }
 
         // Se mantiene el GET histórico usado por el frontend; DELETE es el verbo correcto.
+        [SoloInternos]
         [HttpGet("eliminarCondicionPago/{id}")]
         [HttpDelete("eliminarCondicionPago/{id}")]
         public ActionResult eliminarCondicionPago([FromRoute] int id)

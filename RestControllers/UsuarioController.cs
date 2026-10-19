@@ -1,7 +1,8 @@
-using esupplier.Models.Response;
+﻿using esupplier.Models.Response;
 using esupplier.Services.IServices;
 using esupplier.Utils;
 using Microsoft.AspNetCore.Authorization;
+using esupplier.Middleware.Autorizacion;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json.Linq;
 
@@ -40,6 +41,7 @@ namespace esupplier.ResControllers
             }
         }
 
+        [SoloInternos]
         [HttpPost("listarUsuario")]
         public async Task<ActionResult> listarUsuario()
         {
@@ -59,6 +61,7 @@ namespace esupplier.ResControllers
             }
         }
 
+        [SoloInternos]
         [HttpPost("mantenerUsuario")]
         public async Task<ActionResult> mantenerUsuario()
         {

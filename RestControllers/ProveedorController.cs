@@ -1,6 +1,7 @@
-using esupplier.Models.Response;
+﻿using esupplier.Models.Response;
 using esupplier.Services.IServices;
 using esupplier.Utils;
+using esupplier.Middleware.Autorizacion;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -34,6 +35,7 @@ namespace esupplier.RestControllers
             _logger = logger;
         }
 
+        [ProveedorDelToken("codigo_proveedor")]
         [HttpPost("buscarProveedor")]
         public async Task<ActionResult> buscarProveedor()
         {
@@ -58,6 +60,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [SoloInternos]
         [HttpPost("registrarProveedor")]
         public async Task<ActionResult> registrarProveedor()
         {
@@ -82,6 +85,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("I_LIFNR:10")]
         [HttpPost("consultarCreditoProveedores")]
         public async Task<ActionResult> consultarCreditoProveedores()
         {
@@ -130,6 +134,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("I_LIFNR:10")]
         [HttpPost("consultarProyeccionMateriales")]
         public async Task<ActionResult> consultarProyeccionMateriales()
         {
@@ -163,30 +168,35 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("codigo")]
         [HttpGet("comboCalificacionMes")]
         public ActionResult comboCalificacionMes([FromQuery] string? codigo)
         {
             return Combo(1, codigo, "Proveedor.comboCalificacionMes");
         }
 
+        [ProveedorDelToken("codigo")]
         [HttpGet("comboCalificacionAnnio")]
         public ActionResult comboCalificacionAnnio([FromQuery] string? codigo)
         {
             return Combo(2, codigo, "Proveedor.comboCalificacionAnnio");
         }
 
+        [ProveedorDelToken("codigo")]
         [HttpGet("comboCalificacioCalificacion")]
         public ActionResult comboCalificacioCalificacion([FromQuery] string? codigo)
         {
             return Combo(3, codigo, "Proveedor.comboCalificacioCalificacion");
         }
 
+        [SoloInternos]
         [HttpGet("comboCalificacioProveedor")]
         public ActionResult comboCalificacioProveedor()
         {
             return Combo(0, "", "Proveedor.comboCalificacioProveedor");
         }
 
+        [ProveedorDelToken("codigo")]
         [HttpGet("comboCalificacioOrigen")]
         public ActionResult comboCalificacioOrigen([FromQuery] string? codigo)
         {
@@ -206,6 +216,7 @@ namespace esupplier.RestControllers
             }
         }
 
+        [ProveedorDelToken("codigo")]
         [HttpPost("obtenerCalificacion")]
         public async Task<ActionResult> obtenerCalificacion()
         {

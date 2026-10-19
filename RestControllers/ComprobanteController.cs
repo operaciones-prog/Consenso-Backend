@@ -1,6 +1,7 @@
-using esupplier.Models.Response;
+﻿using esupplier.Models.Response;
 using esupplier.Services.IServices;
 using esupplier.Utils;
+using esupplier.Middleware.Autorizacion;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -20,6 +21,7 @@ namespace esupplier.RestControllers
             _logger = logger;
         }
 
+        [ProveedorDelToken("I_PROVEEDOR")]
         [HttpPost("buscarComprobantes")]
         public async Task<ActionResult> buscarComprobantes()
         {

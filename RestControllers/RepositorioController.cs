@@ -1,8 +1,9 @@
-using esupplier.Models;
+﻿using esupplier.Models;
 using esupplier.Models.Response;
 using esupplier.Services;
 using esupplier.Services.IServices;
 using esupplier.Utils;
+using esupplier.Middleware.Autorizacion;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Graph;
 using Newtonsoft.Json;
@@ -220,6 +221,7 @@ namespace esupplier.RestControllers
             return NotFound();
         }
 
+        [SoloInternos]
         [HttpPost("subirOneDrive")]
         public async Task<ActionResult> SubirOneDrive()
         {
