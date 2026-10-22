@@ -308,6 +308,22 @@ BEGIN
 END
 GO
 
+/* ---------------------------------------------------------------------
+   4) Permisos: el usuario de la app necesita EXECUTE sobre los SP nuevos.
+      Con el rol de 005 ya lo tiene (EXECUTE ON SCHEMA::dbo). Si el usuario
+      de la app tiene permisos objeto por objeto (p. ej. qa_user en QAS):
+        GRANT EXECUTE ON OBJECT::dbo.sp_listarAddon                  TO <usuario_app>;
+        GRANT EXECUTE ON OBJECT::dbo.sp_mantenerAddonActivacion      TO <usuario_app>;
+        GRANT EXECUTE ON OBJECT::dbo.sp_obtenerCredencialIA          TO <usuario_app>;
+        GRANT EXECUTE ON OBJECT::dbo.sp_mantenerCredencialIA         TO <usuario_app>;
+        GRANT EXECUTE ON OBJECT::dbo.sp_actualizarEstadoCredencialIA TO <usuario_app>;
+        GRANT EXECUTE ON OBJECT::dbo.sp_eliminarCredencialIA         TO <usuario_app>;
+        GRANT EXECUTE ON OBJECT::dbo.sp_obtenerUsuarioIA             TO <usuario_app>;
+   --------------------------------------------------------------------- */
+IF DATABASE_PRINCIPAL_ID(N'rol_app_consenso') IS NOT NULL
+    GRANT EXECUTE ON SCHEMA::dbo TO rol_app_consenso;
+GO
+
 PRINT '007_complementos_ia.sql aplicado.';
 GO
 
