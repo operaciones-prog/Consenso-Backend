@@ -68,6 +68,11 @@ namespace esupplier
             services.AddScoped<IRepositorioRepository, RepositorioRepository>();
             services.AddScoped<IHeaderService, HeaderService>();
             services.AddScoped<esupplier.Services.Auth.IUsuarioActual, esupplier.Services.Auth.UsuarioActual>();
+            // Complementos IA
+            services.AddScoped<IIARepository, IARepository>();
+            services.AddScoped<IIAService, IAService>();
+            services.AddSingleton<esupplier.Services.IA.IAlmacenSecretos, esupplier.Services.IA.AlmacenSecretosAws>();
+            services.AddSingleton<esupplier.Services.IA.IVerificadorClaveIA, esupplier.Services.IA.VerificadorClaveIA>();
 
             // Cliente de Microsoft Graph compartido (credenciales y token cacheados)
             services.AddSingleton<IGraphClientProvider, GraphClientProvider>();

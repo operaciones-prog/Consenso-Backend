@@ -41,6 +41,7 @@ Todos los scripts son **idempotentes** (se pueden re-ejecutar).
 | 004 | `004_indices.sql` | Índices de soporte y dos índices únicos filtrados (con verificación previa de duplicados y de opciones SET de los módulos). |
 | 005 | `005_permisos_usuario_app.sql` | Rol `rol_app_consenso` con `EXECUTE` sobre dbo + `INSERT` sobre `tb_orden_compra_det` (único SQL ad-hoc de la app). Plantilla comentada de login/usuario. |
 | 006 | `006_fks_opcional.sql` | **OPCIONAL.** FKs `tb_usuario→tb_rol`, `tb_rol_permiso→tb_rol/tb_permiso`, `tb_orden_compra_det→tb_orden_compra_cab`, solo si no hay huérfanos. |
+| 007 | `007_complementos_ia.sql` | Complementos IA: tablas `tb_addon` (catálogo, 7 complementos; 3 disponibles), `tb_addon_activacion`, `tb_ia_credencial` (solo referencia al secreto de AWS Secrets Manager + últimos 4 caracteres; **la API key no se guarda en la BD**) y `tb_ia_uso`. SP `sp_listarAddon`, `sp_mantenerAddonActivacion` (THROW 50701), `sp_obtenerCredencialIA`, `sp_mantenerCredencialIA`, `sp_actualizarEstadoCredencialIA`, `sp_eliminarCredencialIA`. Verificación y rollback al final del script. |
 
 ### Detalle por procedimiento
 

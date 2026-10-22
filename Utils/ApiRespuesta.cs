@@ -91,6 +91,17 @@ namespace esupplier.Utils
             }.ToString(Formatting.None);
         }
 
+        /// <summary>{"message":"...","type":"E","data":{ fragmento }} — error que igual devuelve datos actualizados.</summary>
+        public static string ErrorConObjeto(string mensaje, string fragmentoObjeto)
+        {
+            return new JObject
+            {
+                ["message"] = mensaje ?? "",
+                ["type"] = "E",
+                ["data"] = ParsearLiteral("{" + (fragmentoObjeto ?? "") + "}")
+            }.ToString(Formatting.None);
+        }
+
         /// <summary>
         /// Registra la excepción completa en el log y devuelve un mensaje genérico,
         /// sin exponer el stack trace al cliente.
