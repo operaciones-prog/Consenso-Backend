@@ -15,6 +15,9 @@ namespace esupplier.Services.Auth
         public string Usuario { get; private set; } = "";
         public string RolId { get; private set; } = "";
         public bool EsInterno { get; private set; }
+        /// <summary>Código SAP del proveedor (8 dígitos) si el usuario es de un proveedor; vacío si es interno.</summary>
+        public string CodigoProveedor { get; private set; } = "";
+        public bool EsProveedor => CodigoProveedor != "";
         /// <summary>Administrador de plataforma (rol 6): el proveedor del sistema.</summary>
         public bool EsPlataforma => RolId == Utils.Constantes.ROL_PLATAFORMA;
 
@@ -27,6 +30,8 @@ namespace esupplier.Services.Auth
             Usuario = usuario ?? "";
             RolId = (rolId ?? "").Trim();
             EsInterno = (codigoReferencia ?? "").Trim() == Utils.Constantes.NO_REFERIDO;
+            string referencia = (codigoReferencia ?? "").Trim();
+            CodigoProveedor = referencia == "" || referencia == Utils.Constantes.NO_REFERIDO ? "" : referencia;
         }
     }
 }

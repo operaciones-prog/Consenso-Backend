@@ -24,6 +24,10 @@ namespace esupplier.Repositorys.IRepositorys
         void aprobarRecarga(int regId, decimal montoAprobado, string usuario);
         void rechazarRecarga(int regId, string motivo, string usuario);
 
+        /// <summary>Registra una consulta a un agente y, si usó la clave de la plataforma, la descuenta del saldo.</summary>
+        void registrarUso(string admClienteId, string codigoSociedad, string usuario, string codigoAddon, string modelo,
+            int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo);
+
         /// <summary>Claves almacenadas (hash o texto heredado) del usuario activo, para pedir la contraseña de nuevo.</summary>
         List<string> obtenerClavesUsuario(string admClienteId, string codigoSociedad, string usuario);
 

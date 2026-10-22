@@ -1,4 +1,5 @@
 using esupplier.Middleware.Autorizacion;
+using esupplier.Services.IA;
 using esupplier.Services.IServices;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,12 +17,14 @@ namespace esupplier.ResControllers
     {
         private readonly IIAService _iaService;
         private readonly IPagosIAService _pagosService;
+        private readonly IAgentesIAService _agentes;
         private readonly ILogger<IAController> _logger;
 
-        public IAController(IIAService iaService, IPagosIAService pagosService, ILogger<IAController> logger)
+        public IAController(IIAService iaService, IPagosIAService pagosService, IAgentesIAService agentes, ILogger<IAController> logger)
         {
             _iaService = iaService;
             _pagosService = pagosService;
+            _agentes = agentes;
             _logger = logger;
         }
 
@@ -70,5 +73,20 @@ namespace esupplier.ResControllers
         [HttpPost("listarRecargas")]
         public Task<ActionResult> listarRecargas() =>
             Ejecutar("IA.listarRecargas", _ => _pagosService.listarRecargasEmpresa(), conObjeto: true);
+
+        /// <summary>
+        /// Ejecuta un agente. Body: {"codigo":"analista_desempeno","contexto":{...}} → data {"respuesta": Markdown}.
+        /// El agente debe estar activo en la sociedad y permitido para el rol (lo valida el motor).
+        /// </summary>
+        [RequiereSesion]
+        [HttpPost("agente")]
+        public Task<ActionResult> agente() =>
+            Ejecutar("IA.agente", json => _agentes.ejecutarAsync(json), conObjeto: true);
+
+        /// <summary>Asistente del proveedor (chat). Body: {"mensajes":[{"rol":"user"|"assistant","texto":"..."}]}.</summary>
+        [RequiereSesion]
+        [HttpPost("asistente")]
+        public Task<ActionResult> asistente() =>
+            Ejecutar("IA.asistente", json => _agentes.conversarAsync(json), conObjeto: true);
     }
 }

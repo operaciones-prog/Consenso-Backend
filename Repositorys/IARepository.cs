@@ -251,5 +251,24 @@ namespace esupplier.Repositorys
             }
             return claves;
         }
+
+        public void registrarUso(string admClienteId, string codigoSociedad, string usuario, string codigoAddon, string modelo,
+            int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_registrarUsoIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", admClienteId));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", codigoSociedad));
+            bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_addon", codigoAddon));
+            bdComando.Parameters.Add(new SqlParameter("@modelo", modelo));
+            bdComando.Parameters.Add(new SqlParameter("@tokens_entrada", tokensEntrada));
+            bdComando.Parameters.Add(new SqlParameter("@tokens_salida", tokensSalida));
+            bdComando.Parameters.Add(new SqlParameter("@costo_usd", SqlDbType.Decimal) { Precision = 12, Scale = 6, Value = costoUsd });
+            bdComando.Parameters.Add(new SqlParameter("@con_saldo", conSaldo));
+            bdComando.ExecuteNonQuery();
+        }
     }
 }
