@@ -40,6 +40,11 @@ namespace esupplier.Services
         private string Cliente => _usuario.Cliente;
         private string Sociedad => _usuario.Sociedad;
 
+        /// <summary>Cliente y sociedad donde se guarda la conexión: la de la empresa o la de la plataforma.</summary>
+        private (string cliente, string sociedad) Ambito(bool plataforma) => plataforma
+            ? (Constantes.AMBITO_PLATAFORMA, Constantes.AMBITO_PLATAFORMA)
+            : (Cliente, Sociedad);
+
         public Mensaje listarAddons()
         {
             string idioma = _headerService.obtenerIdioma() == "EN" ? "EN" : "ES";
@@ -52,13 +57,9 @@ namespace esupplier.Services
             string codigoAddon = JsonUtil.Requerido(jObject, "codigo_addon");
             bool activo = jObject.Value<bool?>("activo") ?? throw new CampoRequeridoException("activo");
 
-            if (activo)
+            if (activo && !PuedeUsarIA())
             {
-                var conexion = _repositorio.obtenerCredencial(Cliente, Sociedad);
-                if (conexion == null || conexion.estado != EstadoCredencialIA.Verificada)
-                {
-                    return new Mensaje("E", "Configure y verifique primero la conexión con el proveedor de IA.", "");
-                }
+                return new Mensaje("E", "Configure su propia API key o recargue saldo para usar la clave de la plataforma.", "");
             }
 
             try
@@ -72,13 +73,31 @@ namespace esupplier.Services
             return new Mensaje("S", activo ? "Complemento activado." : "Complemento desactivado.", "");
         }
 
-        public Mensaje obtenerConexion()
+        /// <summary>
+        /// La empresa puede usar IA si tiene su propia clave verificada, o si tiene saldo
+        /// y la plataforma tiene su clave verificada.
+        /// </summary>
+        private bool PuedeUsarIA()
         {
-            return new Mensaje("S", "", FragmentoConexion(_repositorio.obtenerCredencial(Cliente, Sociedad)));
+            if (EstaVerificada(_repositorio.obtenerCredencial(Cliente, Sociedad))) return true;
+            return _repositorio.obtenerSaldo(Cliente, Sociedad).saldo_usd > 0 && PlataformaDisponible();
         }
 
-        public async Task<Mensaje> guardarConexionAsync(JObject jObject)
+        private bool PlataformaDisponible() =>
+            EstaVerificada(_repositorio.obtenerCredencial(Constantes.AMBITO_PLATAFORMA, Constantes.AMBITO_PLATAFORMA));
+
+        private static bool EstaVerificada(CredencialIA c) => c != null && c.estado == EstadoCredencialIA.Verificada;
+
+        public Mensaje obtenerConexion(bool plataforma = false)
         {
+            var (cliente, sociedad) = Ambito(plataforma);
+            return new Mensaje("S", "", Fragmento(_repositorio.obtenerCredencial(cliente, sociedad), plataforma));
+        }
+
+        public async Task<Mensaje> guardarConexionAsync(JObject jObject, bool plataforma = false)
+        {
+            var (cliente, sociedad) = Ambito(plataforma);
+
             string proveedor = JsonUtil.Opcional(jObject, "proveedor");
             if (string.IsNullOrWhiteSpace(proveedor)) proveedor = ProveedoresIA.Anthropic;
             if (proveedor != ProveedoresIA.Anthropic)
@@ -110,8 +129,8 @@ namespace esupplier.Services
             }
 
             string apiKey = (JsonUtil.Opcional(jObject, "api_key") ?? "").Trim();
-            CredencialIA actual = _repositorio.obtenerCredencial(Cliente, Sociedad);
-            string secretoRef = $"{_prefijoSecretos}/{Cliente}/{Sociedad}";
+            CredencialIA actual = _repositorio.obtenerCredencial(cliente, sociedad);
+            string secretoRef = $"{_prefijoSecretos}/{cliente}/{sociedad}";
 
             CredencialIA nueva;
             if (apiKey == "")
@@ -148,13 +167,14 @@ namespace esupplier.Services
                 };
             }
 
-            _repositorio.mantenerCredencial(Cliente, Sociedad, nueva, _usuario.Usuario);
-            return new Mensaje("S", "Conexión guardada.", FragmentoConexion(_repositorio.obtenerCredencial(Cliente, Sociedad)));
+            _repositorio.mantenerCredencial(cliente, sociedad, nueva, _usuario.Usuario);
+            return new Mensaje("S", "Conexión guardada.", Fragmento(_repositorio.obtenerCredencial(cliente, sociedad), plataforma));
         }
 
-        public async Task<Mensaje> probarConexionAsync()
+        public async Task<Mensaje> probarConexionAsync(bool plataforma = false)
         {
-            CredencialIA actual = _repositorio.obtenerCredencial(Cliente, Sociedad);
+            var (cliente, sociedad) = Ambito(plataforma);
+            CredencialIA actual = _repositorio.obtenerCredencial(cliente, sociedad);
             if (actual == null)
             {
                 return new Mensaje("E", "No hay una conexión configurada.", "");
@@ -169,10 +189,10 @@ namespace esupplier.Services
             if (resultado != ResultadoVerificacion.NoDisponible)
             {
                 bool valida = resultado == ResultadoVerificacion.Valida || resultado == ResultadoVerificacion.ValidaConLimite;
-                _repositorio.actualizarEstadoCredencial(Cliente, Sociedad, valida ? EstadoCredencialIA.Verificada : EstadoCredencialIA.Error);
+                _repositorio.actualizarEstadoCredencial(cliente, sociedad, valida ? EstadoCredencialIA.Verificada : EstadoCredencialIA.Error);
             }
 
-            string fragmento = FragmentoConexion(_repositorio.obtenerCredencial(Cliente, Sociedad));
+            string fragmento = Fragmento(_repositorio.obtenerCredencial(cliente, sociedad), plataforma);
             Mensaje error = MensajeVerificacion(resultado);
             // Se devuelve la conexión también en el error, para que la pantalla muestre el estado nuevo
             return error != null
@@ -180,15 +200,19 @@ namespace esupplier.Services
                 : new Mensaje("S", "La conexión funciona correctamente.", fragmento);
         }
 
-        public async Task<Mensaje> eliminarConexionAsync()
+        public async Task<Mensaje> eliminarConexionAsync(bool plataforma = false)
         {
-            string secretoRef = _repositorio.eliminarCredencial(Cliente, Sociedad, _usuario.Usuario);
+            var (cliente, sociedad) = Ambito(plataforma);
+            string secretoRef = _repositorio.eliminarCredencial(cliente, sociedad, _usuario.Usuario);
             if (secretoRef == null)
             {
                 return new Mensaje("E", "No hay una conexión configurada.", "");
             }
             await _secretos.EliminarAsync(secretoRef);
-            return new Mensaje("S", "Conexión eliminada. Los complementos dejarán de funcionar hasta configurar una nueva clave.", FragmentoConexion(null));
+            string aviso = plataforma
+                ? "Conexión eliminada. Las empresas que usan saldo no podrán usar IA hasta configurar una nueva clave."
+                : "Conexión eliminada. Los complementos dejarán de funcionar hasta configurar una nueva clave.";
+            return new Mensaje("S", aviso, Fragmento(null, plataforma));
         }
 
         /// <summary>null si la clave sirve; si no, el mensaje de error para el usuario.</summary>
@@ -200,8 +224,11 @@ namespace esupplier.Services
             _ => new Mensaje("E", "No se pudo contactar al proveedor de IA. Intente nuevamente en unos minutos.", "")
         };
 
-        /// <summary>"conexion":{...}|null,"modelos":[...] — sin la referencia del secreto.</summary>
-        private static string FragmentoConexion(CredencialIA c)
+        /// <summary>
+        /// "conexion":{...}|null,"modelos":[...] — sin la referencia del secreto. Para la empresa agrega
+        /// "saldo":{...} y "plataforma_disponible" (si puede usar la clave de la plataforma con saldo).
+        /// </summary>
+        private string Fragmento(CredencialIA c, bool plataforma)
         {
             object conexion = c == null ? null : new
             {
@@ -216,8 +243,14 @@ namespace esupplier.Services
                 c.consumo_mes_usd,
                 c.consultas_mes
             };
-            return "\"conexion\":" + JsonConvert.SerializeObject(conexion)
+            string fragmento = "\"conexion\":" + JsonConvert.SerializeObject(conexion)
                 + ",\"modelos\":" + JsonConvert.SerializeObject(ProveedoresIA.ModelosAnthropic);
+            if (!plataforma)
+            {
+                fragmento += ",\"saldo\":" + JsonConvert.SerializeObject(_repositorio.obtenerSaldo(Cliente, Sociedad))
+                    + ",\"plataforma_disponible\":" + (PlataformaDisponible() ? "true" : "false");
+            }
+            return fragmento;
         }
     }
 }

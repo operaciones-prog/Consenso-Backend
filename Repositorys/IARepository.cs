@@ -138,5 +138,118 @@ namespace esupplier.Repositorys
             bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
             return bdComando.ExecuteScalar() as string;
         }
+
+        public SaldoIA obtenerSaldo(string admClienteId, string codigoSociedad)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_obtenerSaldoIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", admClienteId));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", codigoSociedad));
+            using SqlDataReader lector = bdComando.ExecuteReader();
+            lector.Read();
+            return new SaldoIA
+            {
+                saldo_usd = Convert.ToDecimal(lector["saldo_usd"]),
+                recargas_pendientes = Convert.ToInt32(lector["recargas_pendientes"])
+            };
+        }
+
+        public int registrarRecarga(RecargaIA recarga, string usuario)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_registrarRecargaIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", recarga.adm_cliente_id));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", recarga.codigo_sociedad));
+            bdComando.Parameters.Add(new SqlParameter("@monto_usd", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = recarga.monto_usd });
+            bdComando.Parameters.Add(new SqlParameter("@banco", recarga.banco));
+            bdComando.Parameters.Add(new SqlParameter("@referencia", recarga.referencia));
+            bdComando.Parameters.Add(new SqlParameter("@fecha_pago", SqlDbType.Date) { Value = recarga.fecha_pago.Date });
+            bdComando.Parameters.Add(new SqlParameter("@archivo_ruta", recarga.archivo_ruta));
+            bdComando.Parameters.Add(new SqlParameter("@archivo_nombre", recarga.archivo_nombre));
+            bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
+            return Convert.ToInt32(bdComando.ExecuteScalar());
+        }
+
+        public DataTable listarRecargas(string admClienteId, string codigoSociedad, string estado)
+        {
+            DataTable dt = new DataTable();
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_listarRecargaIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", (object)admClienteId ?? DBNull.Value));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", (object)codigoSociedad ?? DBNull.Value));
+            bdComando.Parameters.Add(new SqlParameter("@estado", (object)estado ?? DBNull.Value));
+            using SqlDataAdapter adapter = new SqlDataAdapter(bdComando);
+            adapter.Fill(dt);
+            return dt;
+        }
+
+        public RecargaIA obtenerRecarga(int regId)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_obtenerRecargaIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@reg_id", regId));
+            using SqlDataReader lector = bdComando.ExecuteReader();
+            if (!lector.Read()) return null;
+            return new RecargaIA
+            {
+                reg_id = Convert.ToInt32(lector["reg_id"]),
+                adm_cliente_id = lector["adm_cliente_id"] as string,
+                codigo_sociedad = lector["codigo_sociedad"] as string,
+                monto_usd = Convert.ToDecimal(lector["monto_usd"]),
+                estado = lector["estado"] as string,
+                archivo_ruta = lector["archivo_ruta"] as string,
+                archivo_nombre = lector["archivo_nombre"] as string
+            };
+        }
+
+        public void aprobarRecarga(int regId, decimal montoAprobado, string usuario)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_aprobarRecargaIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@reg_id", regId));
+            bdComando.Parameters.Add(new SqlParameter("@monto_aprobado", SqlDbType.Decimal) { Precision = 10, Scale = 2, Value = montoAprobado });
+            bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
+            bdComando.ExecuteNonQuery();
+        }
+
+        public void rechazarRecarga(int regId, string motivo, string usuario)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_rechazarRecargaIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@reg_id", regId));
+            bdComando.Parameters.Add(new SqlParameter("@motivo", motivo));
+            bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
+            bdComando.ExecuteNonQuery();
+        }
+
+        public List<string> obtenerClavesUsuario(string admClienteId, string codigoSociedad, string usuario)
+        {
+            var claves = new List<string>();
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_obtenerCredencialUsuario", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add("@adm_cliente_id", SqlDbType.VarChar, 12).Value = admClienteId;
+            bdComando.Parameters.Add("@codigo_sociedad", SqlDbType.VarChar, 18).Value = codigoSociedad;
+            bdComando.Parameters.Add("@usuario", SqlDbType.VarChar, 50).Value = usuario;
+            using SqlDataReader lector = bdComando.ExecuteReader();
+            while (lector.Read())
+            {
+                claves.Add(lector["clave"] == DBNull.Value ? "" : lector["clave"].ToString());
+            }
+            return claves;
+        }
     }
 }

@@ -42,6 +42,7 @@ Todos los scripts son **idempotentes** (se pueden re-ejecutar).
 | 005 | `005_permisos_usuario_app.sql` | Rol `rol_app_consenso` con `EXECUTE` sobre dbo + `INSERT` sobre `tb_orden_compra_det` (único SQL ad-hoc de la app). Plantilla comentada de login/usuario. |
 | 006 | `006_fks_opcional.sql` | **OPCIONAL.** FKs `tb_usuario→tb_rol`, `tb_rol_permiso→tb_rol/tb_permiso`, `tb_orden_compra_det→tb_orden_compra_cab`, solo si no hay huérfanos. |
 | 007 | `007_complementos_ia.sql` | Complementos IA: tablas `tb_addon` (catálogo, 7 complementos; 3 disponibles), `tb_addon_activacion`, `tb_ia_credencial` (solo referencia al secreto de AWS Secrets Manager + últimos 4 caracteres; **la API key no se guarda en la BD**) y `tb_ia_uso`. SP `sp_listarAddon`, `sp_mantenerAddonActivacion` (THROW 50701), `sp_obtenerCredencialIA`, `sp_mantenerCredencialIA`, `sp_actualizarEstadoCredencialIA`, `sp_eliminarCredencialIA`. Verificación y rollback al final del script. |
+| 008 | `008_plataforma_pagos_ia.sql` | Rol 6 "Administrador de plataforma" (proveedor del sistema) con sus permisos de menú `plataforma/pagos` y `plataforma/clave-ia`; tablas `tb_ia_saldo` y `tb_ia_recarga` (comprobantes, índice único por banco + referencia); SP de saldo, registro, listado, aprobación (acredita saldo en la misma transacción) y rechazo de recargas (THROW 50811-50813), y `sp_esUsuarioPlataforma`. Al final: plantilla para crear el primer administrador de plataforma. |
 
 ### Detalle por procedimiento
 

@@ -249,6 +249,16 @@ namespace esupplier.Repositorys
             return mensaje;
         }
 
+        public bool esUsuarioPlataforma(int regId)
+        {
+            using SqlConnection bdSql = new SqlConnection(_configuration.GetConnectionString("esupplier"));
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_esUsuarioPlataforma", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@reg_id", regId));
+            return Convert.ToBoolean(bdComando.ExecuteScalar());
+        }
+
         public Mensaje mantenerUsuario(JObject jObject)
         {
             Mensaje mensaje = new Mensaje();

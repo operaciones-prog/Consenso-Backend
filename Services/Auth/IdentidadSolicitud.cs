@@ -15,6 +15,8 @@ namespace esupplier.Services.Auth
         public string Usuario { get; private set; } = "";
         public string RolId { get; private set; } = "";
         public bool EsInterno { get; private set; }
+        /// <summary>Administrador de plataforma (rol 6): el proveedor del sistema.</summary>
+        public bool EsPlataforma => RolId == Utils.Constantes.ROL_PLATAFORMA;
 
         public void Establecer(bool porToken, string cliente, string sociedad, string usuario, string rolId, string codigoReferencia)
         {

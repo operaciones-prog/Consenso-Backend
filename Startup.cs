@@ -72,6 +72,7 @@ namespace esupplier
             services.AddScoped<esupplier.Services.Auth.IdentidadSolicitud>();
             services.AddScoped<IIARepository, IARepository>();
             services.AddScoped<IIAService, IAService>();
+            services.AddScoped<IPagosIAService, PagosIAService>();
             services.AddSingleton<esupplier.Services.IA.IAlmacenSecretos, esupplier.Services.IA.AlmacenSecretosAws>();
             services.AddSingleton<esupplier.Services.IA.IVerificadorClaveIA, esupplier.Services.IA.VerificadorClaveIA>();
 

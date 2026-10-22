@@ -24,6 +24,34 @@ namespace esupplier.Models.IA
         public string codigo_referencia { get; set; }
     }
 
+    public class SaldoIA
+    {
+        public decimal saldo_usd { get; set; }
+        public int recargas_pendientes { get; set; }
+    }
+
+    /// <summary>Recarga de saldo IA: comprobante subido por el cliente y su validación.</summary>
+    public class RecargaIA
+    {
+        public int reg_id { get; set; }
+        public string adm_cliente_id { get; set; }
+        public string codigo_sociedad { get; set; }
+        public decimal monto_usd { get; set; }
+        public string banco { get; set; }
+        public string referencia { get; set; }
+        public DateTime fecha_pago { get; set; }
+        public string archivo_ruta { get; set; }
+        public string archivo_nombre { get; set; }
+        public string estado { get; set; }
+    }
+
+    public static class EstadoRecargaIA
+    {
+        public const string Pendiente = "pendiente";
+        public const string Aprobada = "aprobada";
+        public const string Rechazada = "rechazada";
+    }
+
     public static class EstadoCredencialIA
     {
         public const string Verificada = "verificada";

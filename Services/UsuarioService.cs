@@ -1,3 +1,4 @@
+using esupplier.Utils;
 using System.Globalization;
 using esupplier.Models;
 using esupplier.Models.Response;
@@ -54,6 +55,18 @@ namespace esupplier.Services
 
         public Mensaje mantenerUsuario(JObject jObject)
         {
+            // El rol de plataforma (proveedor del sistema) no se asigna ni se edita desde la pantalla
+            // de usuarios de la empresa: así un administrador de empresa no puede darse ese rol
+            // ni cambiarle la clave al administrador de plataforma.
+            if (JsonUtil.Opcional(jObject, "rol_id").Trim() == Constantes.ROL_PLATAFORMA)
+            {
+                return new Mensaje("E", "El rol de administrador de plataforma no se puede asignar desde aquí.", "");
+            }
+            if (int.TryParse(JsonUtil.Opcional(jObject, "reg_id"), NumberStyles.Integer, CultureInfo.InvariantCulture, out int regId)
+                && regId > 0 && _usuarioRepository.esUsuarioPlataforma(regId))
+            {
+                return new Mensaje("E", "Este usuario es de la plataforma y no se puede modificar desde aquí.", "");
+            }
             return _usuarioRepository.mantenerUsuario(jObject);
         }
     }

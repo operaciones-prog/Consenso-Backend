@@ -16,6 +16,17 @@ namespace esupplier.Repositorys.IRepositorys
         void mantenerCredencial(string admClienteId, string codigoSociedad, CredencialIA credencial, string usuario);
         void actualizarEstadoCredencial(string admClienteId, string codigoSociedad, string estado);
 
+        SaldoIA obtenerSaldo(string admClienteId, string codigoSociedad);
+        int registrarRecarga(RecargaIA recarga, string usuario);
+        /// <summary>codigoSociedad null = todas las sociedades (plataforma).</summary>
+        DataTable listarRecargas(string admClienteId, string codigoSociedad, string estado);
+        RecargaIA obtenerRecarga(int regId);
+        void aprobarRecarga(int regId, decimal montoAprobado, string usuario);
+        void rechazarRecarga(int regId, string motivo, string usuario);
+
+        /// <summary>Claves almacenadas (hash o texto heredado) del usuario activo, para pedir la contraseña de nuevo.</summary>
+        List<string> obtenerClavesUsuario(string admClienteId, string codigoSociedad, string usuario);
+
         /// <summary>Da de baja la conexión y devuelve la referencia del secreto (null si no había).</summary>
         string eliminarCredencial(string admClienteId, string codigoSociedad, string usuario);
     }

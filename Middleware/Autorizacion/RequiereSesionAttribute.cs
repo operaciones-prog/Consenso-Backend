@@ -12,13 +12,14 @@ namespace esupplier.Middleware.Autorizacion
     ///  - Sin JWT y con Auth:Enabled=false (transición): el navegador envía X-Usuario-Id, X-Usuario,
     ///    X-Adm-Cliente-Id y X-Codigo-Sociedad, y se comprueba en tb_usuario que el usuario exista y esté
     ///    activo; el rol se lee de la BD, nunca de la petición. Con Auth:Enabled=true este modo se apaga.
-    /// Sin identidad responde 401; con soloAdministrador, quien no sea administrador interno (rol 1 o 2) recibe 403.
+    /// Sin identidad responde 401; si no tiene el <see cref="Acceso"/> pedido, 403.
     /// </summary>
     [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
     public class RequiereSesionAttribute : Attribute, IAsyncActionFilter
     {
         public const string MensajeSinSesion = "Su sesión no es válida o expiró. Vuelva a iniciar sesión.";
         public const string MensajeSoloAdministrador = "Solo un administrador puede realizar esta operación.";
+        public const string MensajeSoloPlataforma = "Solo el administrador de plataforma puede realizar esta operación.";
 
         public const string CabeceraRegId = "X-Usuario-Id";
         public const string CabeceraUsuario = "X-Usuario";
@@ -27,11 +28,11 @@ namespace esupplier.Middleware.Autorizacion
 
         private static readonly string[] RolesAdministrador = { "1", "2" };
 
-        public bool SoloAdministrador { get; }
+        public Acceso Acceso { get; }
 
-        public RequiereSesionAttribute(bool soloAdministrador = false)
+        public RequiereSesionAttribute(Acceso acceso = Acceso.Sesion)
         {
-            SoloAdministrador = soloAdministrador;
+            Acceso = acceso;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -55,9 +56,14 @@ namespace esupplier.Middleware.Autorizacion
                 context.Result = Respuesta(StatusCodes.Status401Unauthorized, MensajeSinSesion);
                 return;
             }
-            if (SoloAdministrador && (!identidad.EsInterno || !RolesAdministrador.Contains(identidad.RolId)))
+            if (Acceso == Acceso.AdministradorEmpresa && (!identidad.EsInterno || !RolesAdministrador.Contains(identidad.RolId)))
             {
                 context.Result = Respuesta(StatusCodes.Status403Forbidden, MensajeSoloAdministrador);
+                return;
+            }
+            if (Acceso == Acceso.Plataforma && !identidad.EsPlataforma)
+            {
+                context.Result = Respuesta(StatusCodes.Status403Forbidden, MensajeSoloPlataforma);
                 return;
             }
             await next();
@@ -88,5 +94,15 @@ namespace esupplier.Middleware.Autorizacion
             ContentType = "application/json",
             Content = ApiRespuesta.Error(mensaje)
         };
+    }
+
+    public enum Acceso
+    {
+        /// <summary>Cualquier usuario identificado.</summary>
+        Sesion,
+        /// <summary>Administrador interno de la empresa cliente (rol 1 o 2).</summary>
+        AdministradorEmpresa,
+        /// <summary>Administrador de plataforma (rol 6), el proveedor del sistema.</summary>
+        Plataforma
     }
 }
