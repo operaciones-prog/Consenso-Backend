@@ -29,7 +29,9 @@ namespace esupplier.Services.IA
         public bool Exito { get; init; }
         /// <summary>Respuesta en Markdown (si Exito) o mensaje de error para el usuario.</summary>
         public string Texto { get; init; } = "";
-        public static ResultadoAgente Error(string mensaje) => new() { Exito = false, Texto = mensaje };
+        /// <summary>Tokens y costo de la respuesta (null si no se llegó a llamar a Claude).</summary>
+        public UsoIA Uso { get; init; }
+        public static ResultadoAgente Error(string mensaje, UsoIA uso = null) => new() { Exito = false, Texto = mensaje, Uso = uso };
     }
 
     public interface IMotorAgentesIA
@@ -49,14 +51,6 @@ namespace esupplier.Services.IA
     public class MotorAgentesIA : IMotorAgentesIA
     {
         private const int MaxVueltas = 6;
-
-        /// <summary>US$ por millón de tokens (entrada, salida).</summary>
-        private static readonly Dictionary<string, (decimal entrada, decimal salida)> Precios = new()
-        {
-            ["claude-opus-5-5"] = (4m, 20m),
-            ["claude-sonnet-5-5"] = (2m, 10m),
-            ["claude-haiku-5-5"] = (0.10m, 0.50m),
-        };
 
         private readonly IIARepository _repositorio;
         private readonly IdentidadSolicitud _usuario;
@@ -82,7 +76,7 @@ namespace esupplier.Services.IA
             var cliente = new AnthropicClient { ApiKey = clave, MaxRetries = 1 };
             var mensajes = new List<MessageParam>(solicitud.Mensajes);
             var texto = new StringBuilder();
-            long tokensEntrada = 0, tokensSalida = 0;
+            var uso = new UsoIA { modelo = modelo, con_saldo = conSaldo };
 
             try
             {
@@ -100,9 +94,10 @@ namespace esupplier.Services.IA
                     if (solicitud.Herramientas != null) parametros = parametros with { Tools = solicitud.Herramientas };
 
                     Message respuesta = await cliente.Messages.Create(parametros);
-                    tokensEntrada += respuesta.Usage.InputTokens
-                        + (respuesta.Usage.CacheCreationInputTokens ?? 0) + (respuesta.Usage.CacheReadInputTokens ?? 0);
-                    tokensSalida += respuesta.Usage.OutputTokens;
+                    uso.tokens_entrada += respuesta.Usage.InputTokens;
+                    uso.tokens_cache_escritura += respuesta.Usage.CacheCreationInputTokens ?? 0;
+                    uso.tokens_cache_lectura += respuesta.Usage.CacheReadInputTokens ?? 0;
+                    uso.tokens_salida += respuesta.Usage.OutputTokens;
 
                     var eco = new List<ContentBlockParam>();
                     var resultados = new List<ContentBlockParam>();
@@ -121,18 +116,18 @@ namespace esupplier.Services.IA
                         {
                             eco.Add(new RedactedThinkingBlockParam { Data = rt.Data });
                         }
-                        else if (bloque.TryPickToolUse(out ToolUseBlock uso))
+                        else if (bloque.TryPickToolUse(out ToolUseBlock llamada))
                         {
-                            eco.Add(new ToolUseBlockParam { ID = uso.ID, Name = uso.Name, Input = uso.Input });
-                            resultados.Add(await EjecutarHerramientaSeguraAsync(solicitud, uso));
+                            eco.Add(new ToolUseBlockParam { ID = llamada.ID, Name = llamada.Name, Input = llamada.Input });
+                            resultados.Add(await EjecutarHerramientaSeguraAsync(solicitud, llamada));
                         }
                     }
 
                     string motivo = respuesta.StopReason?.Raw() ?? "";
                     if (motivo == "refusal")
                     {
-                        RegistrarUso(solicitud.CodigoAddon, modelo, tokensEntrada, tokensSalida, conSaldo);
-                        return ResultadoAgente.Error("El asistente no puede responder esa consulta. Intente reformularla.");
+                        RegistrarUso(solicitud.CodigoAddon, uso);
+                        return ResultadoAgente.Error("El asistente no puede responder esa consulta. Intente reformularla.", uso);
                     }
                     if (motivo == "tool_use" && resultados.Count > 0 && vuelta < MaxVueltas)
                     {
@@ -151,21 +146,21 @@ namespace esupplier.Services.IA
             }
             catch (AnthropicRateLimitException)
             {
-                RegistrarUso(solicitud.CodigoAddon, modelo, tokensEntrada, tokensSalida, conSaldo);
-                return ResultadoAgente.Error("El proveedor de IA está recibiendo muchas consultas. Intente en un momento.");
+                RegistrarUso(solicitud.CodigoAddon, uso);
+                return ResultadoAgente.Error("El proveedor de IA está recibiendo muchas consultas. Intente en un momento.", uso);
             }
             catch (Exception ex) when (ex is Anthropic5xxException || ex is AnthropicIOException || ex is AnthropicApiException || ex is TaskCanceledException)
             {
                 _logger.LogWarning(ex, "Fallo la llamada a Claude en {Addon}", solicitud.CodigoAddon);
-                RegistrarUso(solicitud.CodigoAddon, modelo, tokensEntrada, tokensSalida, conSaldo);
-                return ResultadoAgente.Error("No se pudo contactar al proveedor de IA. Intente nuevamente.");
+                RegistrarUso(solicitud.CodigoAddon, uso);
+                return ResultadoAgente.Error("No se pudo contactar al proveedor de IA. Intente nuevamente.", uso);
             }
 
-            RegistrarUso(solicitud.CodigoAddon, modelo, tokensEntrada, tokensSalida, conSaldo);
+            RegistrarUso(solicitud.CodigoAddon, uso);
             string final = texto.ToString().Trim();
             return final == ""
-                ? ResultadoAgente.Error("El asistente no devolvió una respuesta. Intente nuevamente.")
-                : new ResultadoAgente { Exito = true, Texto = final };
+                ? ResultadoAgente.Error("El asistente no devolvió una respuesta. Intente nuevamente.", uso)
+                : new ResultadoAgente { Exito = true, Texto = final, Uso = uso };
         }
 
         /// <summary>null si el usuario puede usar el complemento; si no, el motivo.</summary>
@@ -234,15 +229,15 @@ namespace esupplier.Services.IA
         public static string Recortar(string texto, int maximo = 60000) =>
             texto == null ? "" : texto.Length <= maximo ? texto : texto[..maximo] + "\n…(resultado recortado)";
 
-        private void RegistrarUso(string addon, string modelo, long entrada, long salida, bool conSaldo)
+        /// <summary>Calcula el costo y lo registra (descontando el saldo si se usó la clave de la plataforma).</summary>
+        private void RegistrarUso(string addon, UsoIA uso)
         {
-            if (entrada == 0 && salida == 0) return;
-            var (pEntrada, pSalida) = Precios.TryGetValue(modelo, out var p) ? p : (4m, 20m);
-            decimal costo = Math.Round(entrada * pEntrada / 1_000_000m + salida * pSalida / 1_000_000m, 6);
+            uso.costo_usd = PreciosIA.Calcular(uso);
+            if (uso.EntradaTotal == 0 && uso.tokens_salida == 0) return;
             try
             {
-                _repositorio.registrarUso(_usuario.Cliente, _usuario.Sociedad, _usuario.Usuario, addon, modelo,
-                    (int)Math.Min(entrada, int.MaxValue), (int)Math.Min(salida, int.MaxValue), costo, conSaldo);
+                _repositorio.registrarUso(_usuario.Cliente, _usuario.Sociedad, _usuario.Usuario, addon, uso.modelo,
+                    (int)Math.Min(uso.EntradaTotal, int.MaxValue), (int)Math.Min(uso.tokens_salida, int.MaxValue), uso.costo_usd, uso.con_saldo);
             }
             catch (Exception ex)
             {

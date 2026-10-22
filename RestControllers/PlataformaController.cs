@@ -1,4 +1,5 @@
 using esupplier.Middleware.Autorizacion;
+using esupplier.Services.IA;
 using esupplier.Services.IServices;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,12 +17,14 @@ namespace esupplier.ResControllers
     {
         private readonly IPagosIAService _pagosService;
         private readonly IIAService _iaService;
+        private readonly IConsumoIAService _consumo;
         private readonly ILogger<PlataformaController> _logger;
 
-        public PlataformaController(IPagosIAService pagosService, IIAService iaService, ILogger<PlataformaController> logger)
+        public PlataformaController(IPagosIAService pagosService, IIAService iaService, IConsumoIAService consumo, ILogger<PlataformaController> logger)
         {
             _pagosService = pagosService;
             _iaService = iaService;
+            _consumo = consumo;
             _logger = logger;
         }
 
@@ -62,5 +65,10 @@ namespace esupplier.ResControllers
         [HttpPost("eliminarConexion")]
         public Task<ActionResult> eliminarConexion() =>
             Ejecutar("Plataforma.eliminarConexion", _ => _iaService.eliminarConexionAsync(plataforma: true), conObjeto: true);
+
+        /// <summary>Consumo pagado con saldo por todas las empresas. Body: {"desde":"yyyy-MM-dd","hasta":"yyyy-MM-dd"}.</summary>
+        [HttpPost("resumenConsumo")]
+        public Task<ActionResult> resumenConsumo() =>
+            Ejecutar("Plataforma.resumenConsumo", json => _consumo.resumen(json, plataforma: true), conObjeto: true);
     }
 }

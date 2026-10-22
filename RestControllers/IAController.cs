@@ -18,13 +18,16 @@ namespace esupplier.ResControllers
         private readonly IIAService _iaService;
         private readonly IPagosIAService _pagosService;
         private readonly IAgentesIAService _agentes;
+        private readonly IConsumoIAService _consumo;
         private readonly ILogger<IAController> _logger;
 
-        public IAController(IIAService iaService, IPagosIAService pagosService, IAgentesIAService agentes, ILogger<IAController> logger)
+        public IAController(IIAService iaService, IPagosIAService pagosService, IAgentesIAService agentes, IConsumoIAService consumo,
+            ILogger<IAController> logger)
         {
             _iaService = iaService;
             _pagosService = pagosService;
             _agentes = agentes;
+            _consumo = consumo;
             _logger = logger;
         }
 
@@ -88,5 +91,11 @@ namespace esupplier.ResControllers
         [HttpPost("asistente")]
         public Task<ActionResult> asistente() =>
             Ejecutar("IA.asistente", json => _agentes.conversarAsync(json), conObjeto: true);
+
+        /// <summary>Consumo de IA de la empresa (tokens y costo). Body: {"desde":"yyyy-MM-dd","hasta":"yyyy-MM-dd"}.</summary>
+        [RequiereSesion(Acceso.AdministradorEmpresa)]
+        [HttpPost("resumenConsumo")]
+        public Task<ActionResult> resumenConsumo() =>
+            Ejecutar("IA.resumenConsumo", json => _consumo.resumen(json, plataforma: false), conObjeto: true);
     }
 }

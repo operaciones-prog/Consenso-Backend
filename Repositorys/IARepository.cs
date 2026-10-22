@@ -270,5 +270,22 @@ namespace esupplier.Repositorys
             bdComando.Parameters.Add(new SqlParameter("@con_saldo", conSaldo));
             bdComando.ExecuteNonQuery();
         }
+
+        public DataTable listarUso(string admClienteId, string codigoSociedad, DateTime desde, DateTime hasta, bool soloSaldo)
+        {
+            DataTable dt = new DataTable();
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_listarUsoIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", (object)admClienteId ?? DBNull.Value));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", (object)codigoSociedad ?? DBNull.Value));
+            bdComando.Parameters.Add(new SqlParameter("@desde", SqlDbType.Date) { Value = desde.Date });
+            bdComando.Parameters.Add(new SqlParameter("@hasta", SqlDbType.Date) { Value = hasta.Date });
+            bdComando.Parameters.Add(new SqlParameter("@solo_saldo", soloSaldo));
+            using SqlDataAdapter adapter = new SqlDataAdapter(bdComando);
+            adapter.Fill(dt);
+            return dt;
+        }
     }
 }

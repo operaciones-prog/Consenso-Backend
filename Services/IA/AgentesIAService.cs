@@ -259,7 +259,7 @@ a emitir. Sin saludo ni firma, sin Markdown, sin comillas. Máximo {MaxObservaci
             if (!resultado.Exito) return new Mensaje("E", resultado.Texto, "");
             string texto = resultado.Texto.Trim().Trim('"');
             if (texto.Length > MaxObservacion) texto = texto[..MaxObservacion].TrimEnd();
-            return Exito(texto);
+            return Exito(texto, resultado.Uso);
         }
 
         private async Task<Mensaje> ComparadorAsync(JObject ctx)
@@ -447,10 +447,20 @@ Reglas:
 
         private static JsonElement Esquema(object definicion) => System.Text.Json.JsonSerializer.SerializeToElement(definicion);
 
-        private static Mensaje Exito(string texto) =>
-            new Mensaje("S", "", "\"respuesta\":" + JsonConvert.SerializeObject(texto));
+        /// <summary>data: {"respuesta": Markdown, "uso": {tokens y costo} | null}.</summary>
+        private static Mensaje Exito(string texto, UsoIA uso = null) =>
+            new Mensaje("S", "", "\"respuesta\":" + JsonConvert.SerializeObject(texto) + ",\"uso\":" + JsonConvert.SerializeObject(Resumen(uso)));
 
         private static Mensaje Responder(ResultadoAgente r) =>
-            r.Exito ? Exito(r.Texto) : new Mensaje("E", r.Texto, "");
+            r.Exito ? Exito(r.Texto, r.Uso) : new Mensaje("E", r.Texto, "");
+
+        private static object Resumen(UsoIA uso) => uso == null ? null : new
+        {
+            uso.modelo,
+            tokens_entrada = uso.EntradaTotal,
+            uso.tokens_salida,
+            uso.costo_usd,
+            uso.con_saldo
+        };
     }
 }

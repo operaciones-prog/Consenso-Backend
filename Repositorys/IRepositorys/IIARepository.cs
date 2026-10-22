@@ -28,6 +28,9 @@ namespace esupplier.Repositorys.IRepositorys
         void registrarUso(string admClienteId, string codigoSociedad, string usuario, string codigoAddon, string modelo,
             int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo);
 
+        /// <summary>Consumo agrupado por cliente, sociedad, usuario, complemento, modelo y día (sp_listarUsoIA).</summary>
+        DataTable listarUso(string admClienteId, string codigoSociedad, DateTime desde, DateTime hasta, bool soloSaldo);
+
         /// <summary>Claves almacenadas (hash o texto heredado) del usuario activo, para pedir la contraseña de nuevo.</summary>
         List<string> obtenerClavesUsuario(string admClienteId, string codigoSociedad, string usuario);
 

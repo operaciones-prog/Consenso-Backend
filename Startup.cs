@@ -76,6 +76,7 @@ namespace esupplier
             services.AddScoped<esupplier.Services.IA.FuenteDatosIA>();
             services.AddScoped<esupplier.Services.IA.IMotorAgentesIA, esupplier.Services.IA.MotorAgentesIA>();
             services.AddScoped<esupplier.Services.IA.IAgentesIAService, esupplier.Services.IA.AgentesIAService>();
+            services.AddScoped<esupplier.Services.IA.IConsumoIAService, esupplier.Services.IA.ConsumoIAService>();
             services.AddSingleton<esupplier.Services.IA.IAlmacenSecretos, esupplier.Services.IA.AlmacenSecretosAws>();
             services.AddSingleton<esupplier.Services.IA.IVerificadorClaveIA, esupplier.Services.IA.VerificadorClaveIA>();
 
