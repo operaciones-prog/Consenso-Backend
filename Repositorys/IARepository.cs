@@ -16,6 +16,26 @@ namespace esupplier.Repositorys
 
         private SqlConnection Conexion() => new SqlConnection(_configuration.GetConnectionString("esupplier"));
 
+        public UsuarioIA obtenerUsuarioIA(string admClienteId, string codigoSociedad, int regId, string usuario)
+        {
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_obtenerUsuarioIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add(new SqlParameter("@adm_cliente_id", admClienteId));
+            bdComando.Parameters.Add(new SqlParameter("@codigo_sociedad", codigoSociedad));
+            bdComando.Parameters.Add(new SqlParameter("@reg_id", regId));
+            bdComando.Parameters.Add(new SqlParameter("@usuario", usuario));
+            using SqlDataReader lector = bdComando.ExecuteReader();
+            if (!lector.Read()) return null;
+            return new UsuarioIA
+            {
+                usuario = lector["usuario"] as string,
+                rol_id = lector["rol_id"] as string,
+                codigo_referencia = Convert.ToString(lector["codigo_referencia"])
+            };
+        }
+
         public DataTable listarAddon(string admClienteId, string codigoSociedad, string idioma)
         {
             DataTable dt = new DataTable();

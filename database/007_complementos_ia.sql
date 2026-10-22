@@ -288,6 +288,26 @@ BEGIN
 END
 GO
 
+-- Modo sin JWT (Auth:Enabled=false): valida que quien llama sea un usuario activo
+-- y devuelve su rol desde la BD (el rol nunca se toma de la petición).
+CREATE OR ALTER PROCEDURE dbo.sp_obtenerUsuarioIA
+    @adm_cliente_id  varchar(12),
+    @codigo_sociedad varchar(18),
+    @reg_id          int,
+    @usuario         varchar(50)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT u.usuario, CAST(u.rol_id AS varchar(10)) AS rol_id, u.codigo_referencia
+    FROM dbo.tb_usuario u
+    WHERE u.adm_cliente_id = @adm_cliente_id
+      AND u.codigo_sociedad = @codigo_sociedad
+      AND u.reg_id = @reg_id
+      AND u.usuario = @usuario
+      AND u.reg_estado = '1';
+END
+GO
+
 PRINT '007_complementos_ia.sql aplicado.';
 GO
 
@@ -298,7 +318,7 @@ GO
    EXEC dbo.sp_listarAddon '1001', 'EC01', 'ES';
 
    Rollback:
-   DROP PROCEDURE dbo.sp_listarAddon, dbo.sp_mantenerAddonActivacion, dbo.sp_obtenerCredencialIA,
+   DROP PROCEDURE dbo.sp_listarAddon, dbo.sp_mantenerAddonActivacion, dbo.sp_obtenerCredencialIA, dbo.sp_obtenerUsuarioIA,
                   dbo.sp_mantenerCredencialIA, dbo.sp_actualizarEstadoCredencialIA, dbo.sp_eliminarCredencialIA;
    DROP TABLE dbo.tb_ia_uso, dbo.tb_ia_credencial, dbo.tb_addon_activacion, dbo.tb_addon;
    (Borrar antes los secretos "<IA:SecretPrefix>/..." en Secrets Manager.)

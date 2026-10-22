@@ -69,6 +69,7 @@ namespace esupplier
             services.AddScoped<IHeaderService, HeaderService>();
             services.AddScoped<esupplier.Services.Auth.IUsuarioActual, esupplier.Services.Auth.UsuarioActual>();
             // Complementos IA
+            services.AddScoped<esupplier.Services.Auth.IdentidadSolicitud>();
             services.AddScoped<IIARepository, IARepository>();
             services.AddScoped<IIAService, IAService>();
             services.AddSingleton<esupplier.Services.IA.IAlmacenSecretos, esupplier.Services.IA.AlmacenSecretosAws>();

@@ -16,6 +16,14 @@ namespace esupplier.Models.IA
         public int consultas_mes { get; set; }
     }
 
+    /// <summary>Usuario activo devuelto por sp_obtenerUsuarioIA.</summary>
+    public class UsuarioIA
+    {
+        public string usuario { get; set; }
+        public string rol_id { get; set; }
+        public string codigo_referencia { get; set; }
+    }
+
     public static class EstadoCredencialIA
     {
         public const string Verificada = "verificada";

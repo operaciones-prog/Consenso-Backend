@@ -19,13 +19,13 @@ namespace esupplier.Services
         private const decimal LimiteMensualMaximo = 100000m;
 
         private readonly IIARepository _repositorio;
-        private readonly IUsuarioActual _usuario;
+        private readonly IdentidadSolicitud _usuario;
         private readonly IHeaderService _headerService;
         private readonly IAlmacenSecretos _secretos;
         private readonly IVerificadorClaveIA _verificador;
         private readonly string _prefijoSecretos;
 
-        public IAService(IIARepository repositorio, IUsuarioActual usuario, IHeaderService headerService,
+        public IAService(IIARepository repositorio, IdentidadSolicitud usuario, IHeaderService headerService,
             IAlmacenSecretos secretos, IVerificadorClaveIA verificador, IConfiguration configuration, IHostEnvironment entorno)
         {
             _repositorio = repositorio;
@@ -37,8 +37,8 @@ namespace esupplier.Services
             _prefijoSecretos = (configuration["IA:SecretPrefix"] ?? $"consenso/{entorno.EnvironmentName.ToLowerInvariant()}/ia").TrimEnd('/');
         }
 
-        private string Cliente => _usuario.AdmClienteId;
-        private string Sociedad => _usuario.CodigoSociedad;
+        private string Cliente => _usuario.Cliente;
+        private string Sociedad => _usuario.Sociedad;
 
         public Mensaje listarAddons()
         {

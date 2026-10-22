@@ -5,6 +5,9 @@ namespace esupplier.Repositorys.IRepositorys
 {
     public interface IIARepository
     {
+        /// <summary>Usuario activo con ese reg_id y nombre, o null (modo sin JWT).</summary>
+        UsuarioIA obtenerUsuarioIA(string admClienteId, string codigoSociedad, int regId, string usuario);
+
         DataTable listarAddon(string admClienteId, string codigoSociedad, string idioma);
         void mantenerAddonActivacion(string admClienteId, string codigoSociedad, string codigoAddon, bool activo, string usuario);
 
