@@ -27,11 +27,13 @@ namespace esupplier.Services
         private readonly IFileStorageService _archivos;
         private readonly ILogger<PagosIAService> _logger;
 
-        public PagosIAService(IIARepository repositorio, IdentidadSolicitud usuario, IFileStorageService archivos, ILogger<PagosIAService> logger)
+        public PagosIAService(IIARepository repositorio, IdentidadSolicitud usuario, FileStorageFactory almacenamiento, ILogger<PagosIAService> logger)
         {
             _repositorio = repositorio;
             _usuario = usuario;
-            _archivos = archivos;
+            // Los comprobantes tienen su propio proveedor (Storage:ComprobantesProvider): pueden ir a S3
+            // mientras el resto de archivos sigue en OneDrive.
+            _archivos = almacenamiento.GetComprobantesStorage();
             _logger = logger;
         }
 

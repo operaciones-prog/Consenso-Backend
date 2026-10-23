@@ -17,6 +17,13 @@ namespace esupplier.Services.IA
         /// Empresa: todo su consumo. Plataforma: lo pagado con saldo por todas las empresas.
         /// </summary>
         Mensaje resumen(JObject jObject, bool plataforma);
+
+        /// <summary>
+        /// Historial: una fila por consulta con lo consultado y su costo, paginado.
+        /// Body: {"desde","hasta" (yyyy-MM-dd),"pagina":1,"tamanio":15,"buscar":"texto"}.
+        /// El administrador de la empresa ve toda su sociedad; cualquier otro usuario, solo sus consultas.
+        /// </summary>
+        Mensaje historial(JObject jObject);
     }
 
     public class ConsumoIAService : IConsumoIAService
@@ -74,6 +81,60 @@ namespace esupplier.Services.IA
 
             return new Mensaje("S", "", "\"consumo\":" + resultado.ToString(Formatting.None));
         }
+
+        public Mensaje historial(JObject jObject)
+        {
+            DateTime hoy = FechaUtil.AhoraEcuador().Date;
+            DateTime desde = Fecha(jObject, "desde") ?? new DateTime(hoy.Year, hoy.Month, 1);
+            DateTime hasta = Fecha(jObject, "hasta") ?? hoy;
+            if (hasta < desde) (desde, hasta) = (hasta, desde);
+            if ((hasta - desde).TotalDays > MaxDias) return new Mensaje("E", "El periodo puede ser de hasta un año.", "");
+
+            int pagina = Math.Max(1, Entero(jObject, "pagina", 1));
+            int tamanio = Math.Clamp(Entero(jObject, "tamanio", 15), 1, 100);
+            string buscar = JsonUtil.Opcional(jObject, "buscar")?.Trim() ?? "";
+            if (buscar.Length > 100) buscar = buscar[..100];
+
+            // Administrador interno (rol 1 o 2): toda la sociedad. El resto, solo lo suyo.
+            bool administrador = _usuario.EsInterno && (_usuario.RolId == "1" || _usuario.RolId == "2");
+            DataTable filas = _repositorio.listarHistorial(_usuario.Cliente, _usuario.Sociedad,
+                administrador ? null : _usuario.Usuario, desde, hasta, buscar, pagina, tamanio);
+
+            bool ingles = _header.obtenerIdioma() == "EN";
+            var consultas = new JArray(filas.AsEnumerable().Select(r =>
+            {
+                string codigo = r["codigo_addon"] as string ?? "";
+                return new JObject
+                {
+                    ["reg_id"] = Convert.ToInt64(r["reg_id"], CultureInfo.InvariantCulture),
+                    ["fecha"] = Convert.ToDateTime(r["fecha"], CultureInfo.InvariantCulture).ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture),
+                    ["usuario"] = r["usuario"] as string ?? "",
+                    ["codigo"] = codigo,
+                    ["complemento"] = (ingles ? r["nombre_addon_en"] : r["nombre_addon"]) as string ?? codigo,
+                    ["pregunta"] = r["pregunta"] as string ?? "",
+                    ["modelo"] = r["modelo"] as string ?? "",
+                    ["tokens_entrada"] = Convert.ToInt64(r["tokens_entrada"], CultureInfo.InvariantCulture),
+                    ["tokens_salida"] = Convert.ToInt64(r["tokens_salida"], CultureInfo.InvariantCulture),
+                    ["costo_usd"] = Convert.ToDecimal(r["costo_usd"], CultureInfo.InvariantCulture),
+                    ["con_saldo"] = r["con_saldo"] is bool b && b
+                };
+            }));
+
+            // total y costo vienen repetidos en cada fila (calculados sobre todo el filtro). Una página
+            // fuera de rango no trae filas: se informa 0 y el frontend vuelve a la primera.
+            DataRow primera = filas.Rows.Count > 0 ? filas.Rows[0] : null;
+            long total = primera == null ? 0 : Convert.ToInt64(primera["total"], CultureInfo.InvariantCulture);
+            decimal costoTotal = primera == null || primera["costo_total_usd"] == DBNull.Value
+                ? 0 : Math.Round(Convert.ToDecimal(primera["costo_total_usd"], CultureInfo.InvariantCulture), 6);
+
+            return new Mensaje("S", "",
+                "\"consultas\":" + consultas.ToString(Formatting.None)
+                + ",\"total\":" + total.ToString(CultureInfo.InvariantCulture)
+                + ",\"costo_total_usd\":" + costoTotal.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static int Entero(JObject j, string campo, int defecto) =>
+            int.TryParse(JsonUtil.Opcional(j, campo), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : defecto;
 
         private static JObject Totales(IEnumerable<Fila> filas)
         {

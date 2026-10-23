@@ -253,7 +253,7 @@ namespace esupplier.Repositorys
         }
 
         public void registrarUso(string admClienteId, string codigoSociedad, string usuario, string codigoAddon, string modelo,
-            int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo)
+            int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo, string pregunta)
         {
             using SqlConnection bdSql = Conexion();
             bdSql.Open();
@@ -268,6 +268,7 @@ namespace esupplier.Repositorys
             bdComando.Parameters.Add(new SqlParameter("@tokens_salida", tokensSalida));
             bdComando.Parameters.Add(new SqlParameter("@costo_usd", SqlDbType.Decimal) { Precision = 12, Scale = 6, Value = costoUsd });
             bdComando.Parameters.Add(new SqlParameter("@con_saldo", conSaldo));
+            bdComando.Parameters.Add("@pregunta", SqlDbType.NVarChar, 2000).Value = (object)pregunta ?? DBNull.Value;
             bdComando.ExecuteNonQuery();
         }
 
@@ -283,6 +284,27 @@ namespace esupplier.Repositorys
             bdComando.Parameters.Add(new SqlParameter("@desde", SqlDbType.Date) { Value = desde.Date });
             bdComando.Parameters.Add(new SqlParameter("@hasta", SqlDbType.Date) { Value = hasta.Date });
             bdComando.Parameters.Add(new SqlParameter("@solo_saldo", soloSaldo));
+            using SqlDataAdapter adapter = new SqlDataAdapter(bdComando);
+            adapter.Fill(dt);
+            return dt;
+        }
+
+        public DataTable listarHistorial(string admClienteId, string codigoSociedad, string usuario, DateTime desde, DateTime hasta,
+            string buscar, int pagina, int tamanio)
+        {
+            DataTable dt = new DataTable();
+            using SqlConnection bdSql = Conexion();
+            bdSql.Open();
+            using SqlCommand bdComando = new SqlCommand("sp_listarHistorialIA", bdSql);
+            bdComando.CommandType = CommandType.StoredProcedure;
+            bdComando.Parameters.Add("@adm_cliente_id", SqlDbType.VarChar, 12).Value = admClienteId;
+            bdComando.Parameters.Add("@codigo_sociedad", SqlDbType.VarChar, 18).Value = codigoSociedad;
+            bdComando.Parameters.Add("@usuario", SqlDbType.VarChar, 50).Value = (object)usuario ?? DBNull.Value;
+            bdComando.Parameters.Add(new SqlParameter("@desde", SqlDbType.Date) { Value = desde.Date });
+            bdComando.Parameters.Add(new SqlParameter("@hasta", SqlDbType.Date) { Value = hasta.Date });
+            bdComando.Parameters.Add("@buscar", SqlDbType.NVarChar, 100).Value = string.IsNullOrWhiteSpace(buscar) ? DBNull.Value : buscar.Trim();
+            bdComando.Parameters.Add(new SqlParameter("@pagina", pagina));
+            bdComando.Parameters.Add(new SqlParameter("@tamanio", tamanio));
             using SqlDataAdapter adapter = new SqlDataAdapter(bdComando);
             adapter.Fill(dt);
             return dt;

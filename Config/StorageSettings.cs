@@ -3,6 +3,12 @@ namespace esupplier.Config
     public class StorageSettings
     {
         public string Provider { get; set; } = "OneDrive"; // "OneDrive" o "S3"
+
+        /// <summary>
+        /// Solo para los comprobantes de recarga de saldo IA ("OneDrive" o "S3"). Vacío = el de
+        /// <see cref="Provider"/>. Permite guardarlos en S3 sin mover el resto de archivos de OneDrive.
+        /// </summary>
+        public string? ComprobantesProvider { get; set; }
         public OneDriveSettings OneDrive { get; set; } = new();
         public S3Settings S3 { get; set; } = new();
     }

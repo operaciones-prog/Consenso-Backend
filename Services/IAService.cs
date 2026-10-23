@@ -59,7 +59,9 @@ namespace esupplier.Services
 
             if (activo && !PuedeUsarIA())
             {
-                return new Mensaje("E", "Configure su propia API key o recargue saldo para usar la clave de la plataforma.", "");
+                return new Mensaje("E", PlataformaDisponible()
+                    ? "Recargue saldo de IA para activar complementos."
+                    : "El servicio de IA no está disponible. Contacte al administrador de la plataforma.", "");
             }
 
             try
@@ -74,28 +76,35 @@ namespace esupplier.Services
         }
 
         /// <summary>
-        /// La empresa puede usar IA si tiene su propia clave verificada, o si tiene saldo
-        /// y la plataforma tiene su clave verificada.
+        /// Todas las sociedades usan la clave de la plataforma: la empresa puede usar IA si tiene
+        /// saldo y la plataforma tiene su clave verificada.
         /// </summary>
-        private bool PuedeUsarIA()
-        {
-            if (EstaVerificada(_repositorio.obtenerCredencial(Cliente, Sociedad))) return true;
-            return _repositorio.obtenerSaldo(Cliente, Sociedad).saldo_usd > 0 && PlataformaDisponible();
-        }
+        private bool PuedeUsarIA() =>
+            _repositorio.obtenerSaldo(Cliente, Sociedad).saldo_usd > 0 && PlataformaDisponible();
+
+        /// <summary>La clave es única y la gestiona el administrador de plataforma, no cada empresa.</summary>
+        private static Mensaje SoloPlataforma() =>
+            new Mensaje("E", "La conexión de IA la gestiona el administrador de la plataforma.", "");
 
         private bool PlataformaDisponible() =>
             EstaVerificada(_repositorio.obtenerCredencial(Constantes.AMBITO_PLATAFORMA, Constantes.AMBITO_PLATAFORMA));
 
         private static bool EstaVerificada(CredencialIA c) => c != null && c.estado == EstadoCredencialIA.Verificada;
 
+        /// <summary>
+        /// Plataforma: su clave. Empresa: solo saldo y si el servicio está disponible (conexion = null,
+        /// ya no tiene clave propia).
+        /// </summary>
         public Mensaje obtenerConexion(bool plataforma = false)
         {
+            if (!plataforma) return new Mensaje("S", "", Fragmento(null, plataforma: false));
             var (cliente, sociedad) = Ambito(plataforma);
             return new Mensaje("S", "", Fragmento(_repositorio.obtenerCredencial(cliente, sociedad), plataforma));
         }
 
         public async Task<Mensaje> guardarConexionAsync(JObject jObject, bool plataforma = false)
         {
+            if (!plataforma) return SoloPlataforma();
             var (cliente, sociedad) = Ambito(plataforma);
 
             string proveedor = JsonUtil.Opcional(jObject, "proveedor");
@@ -173,6 +182,7 @@ namespace esupplier.Services
 
         public async Task<Mensaje> probarConexionAsync(bool plataforma = false)
         {
+            if (!plataforma) return SoloPlataforma();
             var (cliente, sociedad) = Ambito(plataforma);
             CredencialIA actual = _repositorio.obtenerCredencial(cliente, sociedad);
             if (actual == null)
@@ -202,6 +212,7 @@ namespace esupplier.Services
 
         public async Task<Mensaje> eliminarConexionAsync(bool plataforma = false)
         {
+            if (!plataforma) return SoloPlataforma();
             var (cliente, sociedad) = Ambito(plataforma);
             string secretoRef = _repositorio.eliminarCredencial(cliente, sociedad, _usuario.Usuario);
             if (secretoRef == null)
@@ -209,10 +220,8 @@ namespace esupplier.Services
                 return new Mensaje("E", "No hay una conexión configurada.", "");
             }
             await _secretos.EliminarAsync(secretoRef);
-            string aviso = plataforma
-                ? "Conexión eliminada. Las empresas que usan saldo no podrán usar IA hasta configurar una nueva clave."
-                : "Conexión eliminada. Los complementos dejarán de funcionar hasta configurar una nueva clave.";
-            return new Mensaje("S", aviso, Fragmento(null, plataforma));
+            return new Mensaje("S", "Conexión eliminada. Las empresas no podrán usar IA hasta configurar una nueva clave.",
+                Fragmento(null, plataforma));
         }
 
         /// <summary>null si la clave sirve; si no, el mensaje de error para el usuario.</summary>

@@ -35,6 +35,15 @@ namespace esupplier.Services
             };
         }
 
+        /// <summary>Almacenamiento de los comprobantes de recarga IA (Storage:ComprobantesProvider o, si no está, Storage:Provider).</summary>
+        public IFileStorageService GetComprobantesStorage()
+        {
+            string proveedor = string.IsNullOrWhiteSpace(_storageSettings.ComprobantesProvider)
+                ? _storageSettings.Provider
+                : _storageSettings.ComprobantesProvider;
+            return GetStorageService(proveedor);
+        }
+
         public string GetCurrentProvider()
         {
             return _storageSettings.Provider;

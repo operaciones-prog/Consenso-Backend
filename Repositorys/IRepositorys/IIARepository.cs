@@ -24,12 +24,22 @@ namespace esupplier.Repositorys.IRepositorys
         void aprobarRecarga(int regId, decimal montoAprobado, string usuario);
         void rechazarRecarga(int regId, string motivo, string usuario);
 
-        /// <summary>Registra una consulta a un agente y, si usó la clave de la plataforma, la descuenta del saldo.</summary>
+        /// <summary>
+        /// Registra una consulta a un agente (con el texto consultado, para el historial) y, si usó la
+        /// clave de la plataforma, la descuenta del saldo.
+        /// </summary>
         void registrarUso(string admClienteId, string codigoSociedad, string usuario, string codigoAddon, string modelo,
-            int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo);
+            int tokensEntrada, int tokensSalida, decimal costoUsd, bool conSaldo, string pregunta);
 
         /// <summary>Consumo agrupado por cliente, sociedad, usuario, complemento, modelo y día (sp_listarUsoIA).</summary>
         DataTable listarUso(string admClienteId, string codigoSociedad, DateTime desde, DateTime hasta, bool soloSaldo);
+
+        /// <summary>
+        /// Historial: una fila por consulta, de la más reciente a la más antigua (sp_listarHistorialIA).
+        /// usuario null = toda la sociedad. Cada fila trae total y costo_total_usd del filtro completo.
+        /// </summary>
+        DataTable listarHistorial(string admClienteId, string codigoSociedad, string usuario, DateTime desde, DateTime hasta,
+            string buscar, int pagina, int tamanio);
 
         /// <summary>Claves almacenadas (hash o texto heredado) del usuario activo, para pedir la contraseña de nuevo.</summary>
         List<string> obtenerClavesUsuario(string admClienteId, string codigoSociedad, string usuario);

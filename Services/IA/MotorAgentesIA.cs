@@ -22,6 +22,8 @@ namespace esupplier.Services.IA
         /// <summary>Ejecuta una herramienta: (nombre, entrada) → texto o JSON con el resultado.</summary>
         public Func<string, IReadOnlyDictionary<string, JsonElement>, Task<string>> EjecutarHerramienta { get; init; }
         public int MaxTokens { get; init; } = 4000;
+        /// <summary>Lo consultado, para el historial (tb_ia_uso.pregunta). Se recorta a 2000 caracteres.</summary>
+        public string Pregunta { get; init; } = "";
     }
 
     public class ResultadoAgente
@@ -42,8 +44,7 @@ namespace esupplier.Services.IA
     /// <summary>
     /// Motor común de los agentes IA:
     ///  1. el complemento debe estar activo en la sociedad y permitido para el rol de quien pregunta;
-    ///  2. usa la clave propia de la empresa (si está verificada y no superó su límite mensual) o,
-    ///     si no, la clave de la plataforma cuando la empresa tiene saldo;
+    ///  2. usa la clave de la plataforma (una sola para todas las sociedades) si la empresa tiene saldo;
     ///  3. llama a Claude, resolviendo las herramientas de consulta que pida (máximo <see cref="MaxVueltas"/>);
     ///  4. registra tokens y costo en tb_ia_uso y descuenta el saldo si usó la clave de la plataforma.
     /// Los agentes solo consultan y sugieren: ninguna herramienta modifica datos.
@@ -126,7 +127,7 @@ namespace esupplier.Services.IA
                     string motivo = respuesta.StopReason?.Raw() ?? "";
                     if (motivo == "refusal")
                     {
-                        RegistrarUso(solicitud.CodigoAddon, uso);
+                        RegistrarUso(solicitud, uso);
                         return ResultadoAgente.Error("El asistente no puede responder esa consulta. Intente reformularla.", uso);
                     }
                     if (motivo == "tool_use" && resultados.Count > 0 && vuelta < MaxVueltas)
@@ -146,17 +147,17 @@ namespace esupplier.Services.IA
             }
             catch (AnthropicRateLimitException)
             {
-                RegistrarUso(solicitud.CodigoAddon, uso);
+                RegistrarUso(solicitud, uso);
                 return ResultadoAgente.Error("El proveedor de IA está recibiendo muchas consultas. Intente en un momento.", uso);
             }
             catch (Exception ex) when (ex is Anthropic5xxException || ex is AnthropicIOException || ex is AnthropicApiException || ex is TaskCanceledException)
             {
                 _logger.LogWarning(ex, "Fallo la llamada a Claude en {Addon}", solicitud.CodigoAddon);
-                RegistrarUso(solicitud.CodigoAddon, uso);
+                RegistrarUso(solicitud, uso);
                 return ResultadoAgente.Error("No se pudo contactar al proveedor de IA. Intente nuevamente.", uso);
             }
 
-            RegistrarUso(solicitud.CodigoAddon, uso);
+            RegistrarUso(solicitud, uso);
             string final = texto.ToString().Trim();
             return final == ""
                 ? ResultadoAgente.Error("El asistente no devolvió una respuesta. Intente nuevamente.", uso)
@@ -176,24 +177,16 @@ namespace esupplier.Services.IA
             return roles.Contains(_usuario.RolId) ? null : "Este complemento no está disponible para su perfil.";
         }
 
-        /// <summary>Clave propia si está verificada y dentro del límite; si no, la de la plataforma con saldo.</summary>
+        /// <summary>
+        /// Todas las sociedades usan la clave de la plataforma y pagan con su saldo prepagado.
+        /// Las claves propias que pudiera tener una sociedad en tb_ia_credencial ya no se usan.
+        /// </summary>
         private async Task<(string clave, string modelo, bool conSaldo, string error)> ResolverClaveAsync()
         {
-            CredencialIA propia = _repositorio.obtenerCredencial(_usuario.Cliente, _usuario.Sociedad);
-            if (propia != null && propia.estado == EstadoCredencialIA.Verificada)
-            {
-                if (propia.limite_mensual_usd is decimal limite && propia.consumo_mes_usd >= limite)
-                {
-                    return (null, null, false, "Se alcanzó el límite mensual de consumo de IA de su empresa.");
-                }
-                string clave = await _secretos.LeerAsync(propia.secreto_ref);
-                if (clave != null) return (clave, propia.modelo, false, null);
-            }
-
             CredencialIA plataforma = _repositorio.obtenerCredencial(Constantes.AMBITO_PLATAFORMA, Constantes.AMBITO_PLATAFORMA);
             if (plataforma == null || plataforma.estado != EstadoCredencialIA.Verificada)
             {
-                return (null, null, false, "No hay una conexión de IA disponible. Un administrador debe configurar la API key o recargar saldo.");
+                return (null, null, false, "El servicio de IA no está disponible en este momento. Contacte al administrador de la plataforma.");
             }
             if (_repositorio.obtenerSaldo(_usuario.Cliente, _usuario.Sociedad).saldo_usd <= 0)
             {
@@ -229,19 +222,25 @@ namespace esupplier.Services.IA
         public static string Recortar(string texto, int maximo = 60000) =>
             texto == null ? "" : texto.Length <= maximo ? texto : texto[..maximo] + "\n…(resultado recortado)";
 
-        /// <summary>Calcula el costo y lo registra (descontando el saldo si se usó la clave de la plataforma).</summary>
-        private void RegistrarUso(string addon, UsoIA uso)
+        /// <summary>Máximo de tb_ia_uso.pregunta.</summary>
+        private const int MaxPregunta = 2000;
+
+        /// <summary>Calcula el costo y lo registra con lo consultado (descontando el saldo si se usó la clave de la plataforma).</summary>
+        private void RegistrarUso(SolicitudAgente solicitud, UsoIA uso)
         {
             uso.costo_usd = PreciosIA.Calcular(uso);
             if (uso.EntradaTotal == 0 && uso.tokens_salida == 0) return;
+            string pregunta = (solicitud.Pregunta ?? "").Trim();
+            if (pregunta.Length > MaxPregunta) pregunta = pregunta[..(MaxPregunta - 1)] + "…";
             try
             {
-                _repositorio.registrarUso(_usuario.Cliente, _usuario.Sociedad, _usuario.Usuario, addon, uso.modelo,
-                    (int)Math.Min(uso.EntradaTotal, int.MaxValue), (int)Math.Min(uso.tokens_salida, int.MaxValue), uso.costo_usd, uso.con_saldo);
+                _repositorio.registrarUso(_usuario.Cliente, _usuario.Sociedad, _usuario.Usuario, solicitud.CodigoAddon, uso.modelo,
+                    (int)Math.Min(uso.EntradaTotal, int.MaxValue), (int)Math.Min(uso.tokens_salida, int.MaxValue), uso.costo_usd, uso.con_saldo,
+                    pregunta == "" ? null : pregunta);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "No se pudo registrar el uso de IA de {Addon}", addon);
+                _logger.LogError(ex, "No se pudo registrar el uso de IA de {Addon}", solicitud.CodigoAddon);
             }
         }
     }

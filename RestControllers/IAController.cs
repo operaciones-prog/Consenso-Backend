@@ -97,5 +97,16 @@ namespace esupplier.ResControllers
         [HttpPost("resumenConsumo")]
         public Task<ActionResult> resumenConsumo() =>
             Ejecutar("IA.resumenConsumo", json => _consumo.resumen(json, plataforma: false), conObjeto: true);
+
+        /// <summary>
+        /// Historial de consultas (qué se consultó y cuánto costó), paginado.
+        /// Body: {"desde","hasta" (yyyy-MM-dd),"pagina":1,"tamanio":15,"buscar":"texto"}
+        /// → data {"consultas":[...],"total":n,"costo_total_usd":x}.
+        /// El administrador de la empresa ve toda la sociedad; los demás usuarios, solo sus consultas.
+        /// </summary>
+        [RequiereSesion]
+        [HttpPost("historialConsumo")]
+        public Task<ActionResult> historialConsumo() =>
+            Ejecutar("IA.historialConsumo", json => _consumo.historial(json), conObjeto: true);
     }
 }
