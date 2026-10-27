@@ -79,6 +79,13 @@ namespace esupplier
             services.AddScoped<esupplier.Services.IA.IConsumoIAService, esupplier.Services.IA.ConsumoIAService>();
             services.AddSingleton<esupplier.Services.IA.IAlmacenSecretos, esupplier.Services.IA.AlmacenSecretosAws>();
             services.AddSingleton<esupplier.Services.IA.IVerificadorClaveIA, esupplier.Services.IA.VerificadorClaveIA>();
+            // Planes de IA con tarjeta (Kushki). Llaves: las configura el administrador de plataforma
+            // (Plataforma > Pago con tarjeta); respaldo: Kushki:* en secretos, no en appsettings.
+            services.AddScoped<IPlanIARepository, PlanIARepository>();
+            services.AddScoped<esupplier.Services.IA.IConfiguracionKushki, esupplier.Services.IA.ConfiguracionKushki>();
+            services.AddScoped<esupplier.Services.IA.IPlanIAService, esupplier.Services.IA.PlanIAService>();
+            services.AddScoped<esupplier.Services.IA.IKushkiPlataformaService, esupplier.Services.IA.KushkiPlataformaService>();
+            services.AddHttpClient<esupplier.Services.IA.IKushkiCliente, esupplier.Services.IA.KushkiCliente>();
 
             // Cliente de Microsoft Graph compartido (credenciales y token cacheados)
             services.AddSingleton<IGraphClientProvider, GraphClientProvider>();

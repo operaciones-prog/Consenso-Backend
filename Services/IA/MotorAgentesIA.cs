@@ -190,7 +190,7 @@ namespace esupplier.Services.IA
             }
             if (_repositorio.obtenerSaldo(_usuario.Cliente, _usuario.Sociedad).saldo_usd <= 0)
             {
-                return (null, null, false, "Su empresa no tiene saldo de IA. Un administrador puede recargarlo en Complementos IA.");
+                return (null, null, false, "Su empresa no tiene saldo de IA. Un administrador puede contratar un plan o recargar saldo en Complementos IA.");
             }
             if (plataforma.limite_mensual_usd is decimal tope && plataforma.consumo_mes_usd >= tope)
             {

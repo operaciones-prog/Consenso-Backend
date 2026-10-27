@@ -152,6 +152,8 @@ namespace esupplier.Repositorys
             return new SaldoIA
             {
                 saldo_usd = Convert.ToDecimal(lector["saldo_usd"]),
+                saldo_plan_usd = Convert.ToDecimal(lector["saldo_plan_usd"]),
+                saldo_recarga_usd = Convert.ToDecimal(lector["saldo_recarga_usd"]),
                 recargas_pendientes = Convert.ToInt32(lector["recargas_pendientes"])
             };
         }

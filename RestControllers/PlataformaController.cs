@@ -18,15 +18,38 @@ namespace esupplier.ResControllers
         private readonly IPagosIAService _pagosService;
         private readonly IIAService _iaService;
         private readonly IConsumoIAService _consumo;
+        private readonly IKushkiPlataformaService _kushki;
         private readonly ILogger<PlataformaController> _logger;
 
-        public PlataformaController(IPagosIAService pagosService, IIAService iaService, IConsumoIAService consumo, ILogger<PlataformaController> logger)
+        public PlataformaController(IPagosIAService pagosService, IIAService iaService, IConsumoIAService consumo,
+            IKushkiPlataformaService kushki, ILogger<PlataformaController> logger)
         {
             _pagosService = pagosService;
             _iaService = iaService;
             _consumo = consumo;
+            _kushki = kushki;
             _logger = logger;
         }
+
+        // ---- Pago con tarjeta (llaves de Kushki de los planes de IA) ----
+
+        [HttpPost("obtenerKushki")]
+        public Task<ActionResult> obtenerKushki() =>
+            Ejecutar("Plataforma.obtenerKushki", _ => _kushki.obtener(), conObjeto: true);
+
+        /// <summary>Body: {"prueba":true,"llave_publica","llave_privada","secreto_webhook","clave"}</summary>
+        [HttpPost("guardarKushki")]
+        public Task<ActionResult> guardarKushki() =>
+            Ejecutar("Plataforma.guardarKushki", json => _kushki.guardarAsync(json), conObjeto: true);
+
+        [HttpPost("probarKushki")]
+        public Task<ActionResult> probarKushki() =>
+            Ejecutar("Plataforma.probarKushki", _ => _kushki.probarAsync(), conObjeto: true);
+
+        /// <summary>Body: {"clave"}</summary>
+        [HttpPost("eliminarKushki")]
+        public Task<ActionResult> eliminarKushki() =>
+            Ejecutar("Plataforma.eliminarKushki", json => _kushki.eliminarAsync(json), conObjeto: true);
 
         protected override ILogger Logger => _logger;
 

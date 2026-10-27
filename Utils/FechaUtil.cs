@@ -23,5 +23,11 @@ namespace esupplier.Utils
         {
             return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, ZonaEcuador);
         }
+
+        /// <summary>Un instante UTC en hora de Ecuador.</summary>
+        public static DateTime AEcuador(DateTime utc)
+        {
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), ZonaEcuador);
+        }
     }
 }

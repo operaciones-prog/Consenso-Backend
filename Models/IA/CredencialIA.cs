@@ -26,7 +26,12 @@ namespace esupplier.Models.IA
 
     public class SaldoIA
     {
+        /// <summary>Total disponible: el del plan vigente + el recargado.</summary>
         public decimal saldo_usd { get; set; }
+        /// <summary>Saldo del plan del periodo actual (0 si no hay plan vigente). Se usa primero.</summary>
+        public decimal saldo_plan_usd { get; set; }
+        /// <summary>Recargado con comprobante: no vence.</summary>
+        public decimal saldo_recarga_usd { get; set; }
         public int recargas_pendientes { get; set; }
     }
 

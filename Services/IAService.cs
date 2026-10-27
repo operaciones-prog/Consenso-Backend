@@ -60,7 +60,7 @@ namespace esupplier.Services
             if (activo && !PuedeUsarIA())
             {
                 return new Mensaje("E", PlataformaDisponible()
-                    ? "Recargue saldo de IA para activar complementos."
+                    ? "Contrate un plan o recargue saldo de IA para activar complementos."
                     : "El servicio de IA no está disponible. Contacte al administrador de la plataforma.", "");
             }
 

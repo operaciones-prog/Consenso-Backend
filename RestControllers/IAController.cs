@@ -19,15 +19,17 @@ namespace esupplier.ResControllers
         private readonly IPagosIAService _pagosService;
         private readonly IAgentesIAService _agentes;
         private readonly IConsumoIAService _consumo;
+        private readonly IPlanIAService _plan;
         private readonly ILogger<IAController> _logger;
 
         public IAController(IIAService iaService, IPagosIAService pagosService, IAgentesIAService agentes, IConsumoIAService consumo,
-            ILogger<IAController> logger)
+            IPlanIAService plan, ILogger<IAController> logger)
         {
             _iaService = iaService;
             _pagosService = pagosService;
             _agentes = agentes;
             _consumo = consumo;
+            _plan = plan;
             _logger = logger;
         }
 
@@ -76,6 +78,39 @@ namespace esupplier.ResControllers
         [HttpPost("listarRecargas")]
         public Task<ActionResult> listarRecargas() =>
             Ejecutar("IA.listarRecargas", _ => _pagosService.listarRecargasEmpresa(), conObjeto: true);
+
+        /// <summary>Planes mensuales (con IVA), la suscripción de la sociedad, sus cobros y el saldo → data {"plan":{...}}.</summary>
+        [RequiereSesion(Acceso.AdministradorEmpresa)]
+        [HttpPost("plan")]
+        public Task<ActionResult> plan() =>
+            Ejecutar("IA.plan", _ => _plan.plan(), conObjeto: true);
+
+        /// <summary>
+        /// Contrata o cambia de plan. Body: {"codigo_plan","token" (Kushki Hosted Fields, isSubscription),
+        /// "contacto":{nombres, apellidos, email, tipo_documento (CI|RUC|PAS), numero_documento, telefono},
+        /// "tarjeta":{marca, ultimos4}}. Con suscripción vigente solo hace falta codigo_plan.
+        /// </summary>
+        [RequiereSesion(Acceso.AdministradorEmpresa)]
+        [HttpPost("suscribirPlan")]
+        public Task<ActionResult> suscribirPlan() =>
+            Ejecutar("IA.suscribirPlan", json => _plan.suscribirAsync(json), conObjeto: true);
+
+        /// <summary>Body: {"token","tarjeta":{marca, ultimos4}}.</summary>
+        [RequiereSesion(Acceso.AdministradorEmpresa)]
+        [HttpPost("cambiarTarjetaPlan")]
+        public Task<ActionResult> cambiarTarjetaPlan() =>
+            Ejecutar("IA.cambiarTarjetaPlan", json => _plan.cambiarTarjetaAsync(json), conObjeto: true);
+
+        /// <summary>Kushki deja de cobrar; el plan sigue hasta el fin del periodo pagado.</summary>
+        [RequiereSesion(Acceso.AdministradorEmpresa)]
+        [HttpPost("cancelarPlan")]
+        public Task<ActionResult> cancelarPlan() =>
+            Ejecutar("IA.cancelarPlan", _ => _plan.cancelarAsync(), conObjeto: true);
+
+        [RequiereSesion(Acceso.AdministradorEmpresa)]
+        [HttpPost("anularCambioPlan")]
+        public Task<ActionResult> anularCambioPlan() =>
+            Ejecutar("IA.anularCambioPlan", _ => _plan.anularCambioPlanAsync(), conObjeto: true);
 
         /// <summary>
         /// Ejecuta un agente. Body: {"codigo":"analista_desempeno","contexto":{...}} → data {"respuesta": Markdown}.
